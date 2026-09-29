@@ -1,0 +1,51 @@
+<!-- Absolute path: SMS/templates/dashboard/parent/overview.html -->
+{% extends "dashboard/parent/_parent_base.html" %}
+{% block title %}My Children — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">My Children</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">My Children</h3>
+
+{% if not child_rows %}
+    <div class="alert alert-secondary">No children are currently linked to your account. Contact the school office if this seems wrong.</div>
+{% endif %}
+
+<div class="row g-3">
+    {% for row in child_rows %}
+    <div class="col-md-6">
+        <div class="card sms-stat-card p-3">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h5 class="mb-1">{{ row.student.user.get_full_name|default:row.student.user.username }}</h5>
+                    <div class="text-muted small">{{ row.student.admission_number }} &middot; {{ row.student.current_class|default:"—" }}</div>
+                </div>
+                <span class="badge bg-secondary">{{ row.current_term|default:"No active term" }}</span>
+            </div>
+            <hr>
+            <div class="row text-center">
+                <div class="col-4">
+                    <div class="text-muted small">Average</div>
+                    <div class="fw-semibold">{{ row.average|default:"—" }}{% if row.average %}%{% endif %}</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-muted small">Balance</div>
+                    <div class="fw-semibold">{{ row.account_summary.outstanding_balance }}</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-muted small">Arrears</div>
+                    <div class="fw-semibold">{{ row.account_summary.arrears }}</div>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:parent_child_academic' row.student.pk %}">Academic</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:parent_child_finance' row.student.pk %}">Finance</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

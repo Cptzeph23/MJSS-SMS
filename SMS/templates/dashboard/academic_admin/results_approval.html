@@ -1,0 +1,47 @@
+<!-- Absolute path: SMS/templates/dashboard/academic_admin/results_approval.html -->
+{% extends "dashboard/academic_admin/_academic_admin_base.html" %}
+{% block title %}Result Approvals — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Result Approvals</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Result Approvals</h3>
+<p class="text-muted">Assessments pending review, verification, or approval before publishing.</p>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Title</th><th>Class / Subject</th><th>Term</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for a in assessments %}
+            <tr>
+                <td>{{ a.title }}</td>
+                <td>{{ a.class_subject.class_group }} - {{ a.class_subject.subject.name }}</td>
+                <td>{{ a.term }}</td>
+                <td><span class="badge bg-secondary">{{ a.get_workflow_status_display }}</span></td>
+                <td class="text-end">
+                    <form method="post" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="assessment_id" value="{{ a.pk }}">
+                        {% if a.workflow_status == "SUBMITTED" %}
+                            <button type="submit" name="action" value="review" class="btn btn-sm btn-outline-primary">Review</button>
+                        {% elif a.workflow_status == "REVIEWED" %}
+                            <button type="submit" name="action" value="verify" class="btn btn-sm btn-outline-primary">Verify</button>
+                        {% elif a.workflow_status == "VERIFIED" %}
+                            <button type="submit" name="action" value="approve" class="btn btn-sm btn-outline-success">Approve</button>
+                        {% endif %}
+                        <button type="submit" name="action" value="reject" class="btn btn-sm btn-outline-danger">Reject</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5" class="text-muted">No assessments awaiting action.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

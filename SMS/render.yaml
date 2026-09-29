@@ -1,0 +1,72 @@
+# Absolute path: SMS/render.yaml
+#
+# Render Blueprint (https://render.com/docs/blueprint-spec). Commit this
+# at the repo root; Render auto-detects it when you connect the GitHub
+# repo and create a new Blueprint instance.
+#
+# Database is Supabase PostgreSQL, not Render's managed Postgres (spec
+# §41), so DATABASE_URL below is set manually in the Render dashboard
+# (sync: false), not provisioned by this Blueprint.
+
+services:
+  - type: web
+    name: sms-web
+    runtime: python
+    plan: starter
+    branch: main
+    buildCommand: "bash deploy/build.sh"
+    startCommand: "gunicorn SMS.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: SMS.settings.prod
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+      # --- Secrets: set these manually in the Render dashboard, never
+      #     commit real values. sync: false means "Render will prompt for
+      #     this value and not store it in this file." ---
+      - key: SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false  # e.g. your-app.onrender.com,yourschool.example.com
+
+      # Supabase PostgreSQL (spec §41)
+      - key: DATABASE_URL
+        sync: false
+
+      # Supabase Storage — S3-protocol keys, see .env.example for where
+      # to generate these (Supabase dashboard -> Storage -> S3 Connection)
+      - key: SUPABASE_STORAGE_ENDPOINT_URL
+        sync: false
+      - key: SUPABASE_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: SUPABASE_STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET_NAME
+        value: sms-media
+      - key: SUPABASE_STORAGE_REGION
+        value: us-east-1
+
+      # Redis — link to the service defined below
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: sms-redis
+          property: connectionString
+
+      # Email (production SMTP)
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+
+  - type: redis
+    name: sms-redis
+    plan: starter
+    ipAllowList: []  # only reachable from other services in this Render project

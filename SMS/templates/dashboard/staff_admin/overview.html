@@ -1,0 +1,50 @@
+<!-- Absolute path: SMS/templates/dashboard/staff_admin/overview.html -->
+{% extends "dashboard/staff_admin/_staff_admin_base.html" %}
+{% block title %}Staff Admin Overview — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Staff Admin</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Staff Admin Overview</h3>
+
+<div class="row g-3">
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Active Staff</div>
+            <div class="fs-4 fw-semibold">{{ total_staff }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">On Leave</div>
+            <div class="fs-4 fw-semibold">{{ on_leave_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Pending Leave Requests</div>
+            <div class="fs-4 fw-semibold">{{ pending_leave_requests }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Departments</div>
+            <div class="fs-4 fw-semibold">{{ departments|length }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card sms-stat-card mt-4 p-3">
+    <div class="text-muted small mb-2">Departments</div>
+    <ul class="list-unstyled mb-0">
+        {% for d in departments %}
+            <li class="py-1 border-bottom">{{ d.name }}</li>
+        {% empty %}
+            <li class="text-muted">No departments configured yet.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/materials.html -->
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}Course Materials — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Materials</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Course Materials</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Upload Material</div>
+    <form method="post" enctype="multipart/form-data" class="row g-2">
+        {% csrf_token %}
+        <div class="col-md-3">
+            <select name="class_subject_id" class="form-select" required>
+                <option value="">Class / Subject</option>
+                {% for cs in class_subjects %}
+                    <option value="{{ cs.pk }}">{{ cs.class_group }} - {{ cs.subject.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select name="material_type" class="form-select" required>
+                {% for value, label in material_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <input type="text" name="title" class="form-control" placeholder="Title" required>
+        </div>
+        <div class="col-md-6">
+            <textarea name="description" class="form-control" placeholder="Description" rows="2"></textarea>
+        </div>
+        <div class="col-md-3">
+            <input type="file" name="file" class="form-control">
+        </div>
+        <div class="col-md-3">
+            <input type="url" name="external_url" class="form-control" placeholder="Link / video URL">
+        </div>
+        <div class="col-12">
+            <textarea name="text_content" class="form-control" placeholder="Text lesson content (if applicable)" rows="3"></textarea>
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </div>
+    </form>
+</div>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Title</th><th>Type</th><th>Class / Subject</th><th>Uploaded</th></tr>
+        </thead>
+        <tbody>
+        {% for m in materials %}
+            <tr>
+                <td>
+                    {% if m.file %}<a href="{{ m.file.url }}" target="_blank">{{ m.title }}</a>{% else %}{{ m.title }}{% endif %}
+                    {% if m.external_url %} <a href="{{ m.external_url }}" target="_blank">(link)</a>{% endif %}
+                </td>
+                <td>{{ m.get_material_type_display }}</td>
+                <td>{{ m.class_subject.class_group }} - {{ m.class_subject.subject.name }}</td>
+                <td>{{ m.created_at }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4" class="text-muted">No materials uploaded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

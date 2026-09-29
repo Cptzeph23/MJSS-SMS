@@ -1,0 +1,4 @@
+<li class="nav-item"><a class="nav-link {% if active == 'overview' or not active %}active{% endif %}" href="{% url 'dashboard:super_admin' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
+<li class="nav-item"><a class="nav-link {% if active == 'users' %}active{% endif %}" href="{% url 'dashboard:super_admin_users' %}"><i class="bi bi-people me-2"></i>Users</a></li>
+<li class="nav-item"><a class="nav-link {% if active == 'school_config' %}active{% endif %}" href="{% url 'dashboard:super_admin_school_config' %}"><i class="bi bi-building me-2"></i>School Config</a></li>
+<li class="nav-item"><a class="nav-link {% if active == 'audit_logs' %}active{% endif %}" href="{% url 'dashboard:super_admin_audit_logs' %}"><i class="bi bi-journal-text me-2"></i>Audit Logs</a></li>

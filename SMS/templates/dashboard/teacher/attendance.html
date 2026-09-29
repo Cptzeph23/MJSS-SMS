@@ -1,0 +1,47 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/attendance.html -->
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}Mark Attendance — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:teacher_classes' %}">My Classes</a></li>
+    <li class="breadcrumb-item active">Attendance</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">{{ class_subject }} — Attendance</h3>
+<p class="text-muted mb-4">{{ target_date }}</p>
+
+{% if session_locked %}
+    <div class="alert alert-warning">This session has been locked by Academic Admin. Use the correction workflow to make changes.</div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="date" value="{{ target_date|date:'Y-m-d' }}">
+    <div class="card sms-stat-card p-3">
+        <table class="table align-middle mb-0">
+            <thead><tr><th>Student</th><th>Status</th><th>Notes</th></tr></thead>
+            <tbody>
+            {% for row in student_rows %}
+                <tr>
+                    <td>{{ row.student.admission_number }} — {{ row.student.user.get_full_name|default:row.student.user.username }}</td>
+                    <td>
+                        <select class="form-select form-select-sm" name="status_{{ row.student.pk }}" {% if session_locked %}disabled{% endif %}>
+                            {% for value, label in status_choices %}
+                                <option value="{{ value }}" {% if row.record.status == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm" name="notes_{{ row.student.pk }}" value="{{ row.record.notes|default:'' }}" {% if session_locked %}disabled{% endif %}></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="3" class="text-muted">No students enrolled yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if not session_locked %}
+        <button type="submit" class="btn btn-primary mt-3">Save Attendance</button>
+    {% endif %}
+</form>
+{% endblock %}

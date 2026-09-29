@@ -1,0 +1,30 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/timetable.html -->
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}My Timetable — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Timetable</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">My Timetable</h3>
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Day</th><th>Period</th><th>Class</th><th>Subject</th><th>Room</th></tr></thead>
+        <tbody>
+        {% for slot in slots %}
+            <tr>
+                <td>{{ slot.day_of_week }}</td>
+                <td>{{ slot.period.name }} ({{ slot.period.start_time }}&ndash;{{ slot.period.end_time }})</td>
+                <td>{{ slot.class_group }}</td>
+                <td>{{ slot.teaching_assignment.class_subject.subject.name }}</td>
+                <td>{{ slot.room|default:"—" }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5" class="text-muted">No timetable slots assigned yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

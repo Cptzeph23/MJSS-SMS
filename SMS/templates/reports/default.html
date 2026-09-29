@@ -1,0 +1,201 @@
+<!-- Absolute path: SMS/templates/reports/default.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Report Card — {{ student.user.get_full_name|default:student.user.username }}</title>
+    <style>
+        @page { size: A4; margin: 2cm; }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: #222;
+            font-size: 12px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid #2f3437;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+        .header .logo img { max-height: 64px; }
+        .header .school-info { text-align: right; }
+        .school-info h1 { margin: 0; font-size: 18px; color: #2f3437; }
+        .school-info p { margin: 2px 0; font-size: 11px; color: #555; }
+
+        .student-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px 24px;
+            margin-bottom: 18px;
+            font-size: 12px;
+        }
+        .student-meta div span.label { color: #666; display: block; font-size: 10px; text-transform: uppercase; }
+
+        table.subjects {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+        table.subjects th, table.subjects td {
+            border: 1px solid #ccc;
+            padding: 6px 8px;
+            text-align: left;
+            font-size: 11.5px;
+        }
+        table.subjects th { background-color: #eef0f1; color: #2f3437; }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 16px 0;
+            font-size: 12px;
+        }
+        .summary-row .box {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 8px 14px;
+            text-align: center;
+        }
+        .summary-row .box .value { font-size: 16px; font-weight: 600; color: #2f3437; }
+
+        .attendance-row { margin-bottom: 16px; font-size: 12px; }
+        .attendance-row span { margin-right: 18px; }
+
+        .comments { margin-top: 18px; }
+        .comments .comment-block {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            min-height: 40px;
+        }
+        .comments .comment-block .label { font-size: 10px; text-transform: uppercase; color: #666; margin-bottom: 4px; }
+
+        .signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 40px;
+        }
+        .signatures .sig-block { width: 30%; text-align: center; }
+        .signatures .sig-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 4px; font-size: 10px; color: #555; }
+
+        .stamp-area {
+            border: 1px dashed #aaa;
+            border-radius: 50%;
+            width: 90px;
+            height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            color: #999;
+            text-align: center;
+            margin: 20px auto 0;
+        }
+
+        .footer-text { margin-top: 24px; font-size: 10px; color: #777; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            {% if school_logo %}
+                <img src="{{ school_logo }}" alt="{{ school.name }} logo">
+            {% endif %}
+        </div>
+        <div class="school-info">
+            <h1>{{ school.name }}</h1>
+            {% if school.motto %}<p>{{ school.motto }}</p>{% endif %}
+            <p>{{ school.address }}</p>
+        </div>
+    </div>
+
+    <h2 style="text-align:center; color:#2f3437;">Student Report — {{ term }}</h2>
+
+    <div class="student-meta">
+        <div><span class="label">Student Name</span>{{ student.user.get_full_name|default:student.user.username }}</div>
+        <div><span class="label">Admission Number</span>{{ student.admission_number }}</div>
+        <div><span class="label">Class</span>{{ class_group|default:"—" }}</div>
+        <div><span class="label">Stream</span>{{ stream|default:"—" }}</div>
+        <div><span class="label">Academic Year</span>{{ academic_year }}</div>
+        <div><span class="label">Term</span>{{ term }}</div>
+    </div>
+
+    <table class="subjects">
+        <thead>
+            <tr>
+                <th>Subject</th>
+                <th>Score (%)</th>
+                <th>Grade</th>
+                {% if template_config.show_gpa %}<th>Grade Point</th>{% endif %}
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in subject_rows %}
+            <tr>
+                <td>{{ row.subject }}</td>
+                <td>{{ row.score }}</td>
+                <td>{{ row.grade }}</td>
+                {% if template_config.show_gpa %}<td>{{ row.grade_point|default:"—" }}</td>{% endif %}
+                <td>{% if row.is_complete %}Complete{% else %}Incomplete{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">No subject results available for this term.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="summary-row">
+        <div class="box">
+            <div class="label">Average</div>
+            <div class="value">{{ average|default:"—" }}{% if average %}%{% endif %}</div>
+        </div>
+        {% if template_config.show_position and position %}
+        <div class="box">
+            <div class="label">Position</div>
+            <div class="value">{{ position }}{% if class_size %} / {{ class_size }}{% endif %}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if template_config.show_attendance %}
+    <div class="attendance-row">
+        <strong>Attendance:</strong>
+        <span>Present: {{ attendance_summary.present }}</span>
+        <span>Absent: {{ attendance_summary.absent }}</span>
+        <span>Late: {{ attendance_summary.late }}</span>
+        <span>Excused: {{ attendance_summary.excused }}</span>
+    </div>
+    {% endif %}
+
+    <div class="comments">
+        <div class="comment-block">
+            <div class="label">Class Teacher's Comment</div>
+            {{ class_teacher_comment|default:"—" }}
+        </div>
+        <div class="comment-block">
+            <div class="label">Principal / Head Teacher's Comment</div>
+            {{ principal_comment|default:"—" }}
+        </div>
+    </div>
+
+    <div class="signatures">
+        <div class="sig-block">
+            <div class="sig-line">Class Teacher's Signature</div>
+        </div>
+        <div class="sig-block">
+            <div class="stamp-area">School Stamp</div>
+        </div>
+        <div class="sig-block">
+            <div class="sig-line">Principal's Signature</div>
+        </div>
+    </div>
+
+    {% if template_config.footer_text %}
+        <div class="footer-text">{{ template_config.footer_text }}</div>
+    {% endif %}
+</body>
+</html>

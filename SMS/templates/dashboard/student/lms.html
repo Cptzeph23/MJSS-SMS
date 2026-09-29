@@ -1,0 +1,113 @@
+<!-- Absolute path: SMS/templates/dashboard/student/lms.html -->
+{% extends "dashboard/student/_student_base.html" %}
+{% block title %}Learning — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Learning</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Learning</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Course Materials</div>
+    {% if materials %}
+        <ul class="list-unstyled mb-0">
+        {% for m in materials %}
+            <li class="mb-2">
+                <strong>{{ m.class_subject.subject.name }}</strong> — {{ m.title }}
+                <span class="badge bg-secondary">{{ m.get_material_type_display }}</span>
+                {% if m.file %}<a href="{{ m.file.url }}" class="ms-2">Open</a>{% endif %}
+                {% if m.external_url %}<a href="{{ m.external_url }}" class="ms-2" target="_blank">Open Link</a>{% endif %}
+                {% if m.text_content %}<div class="mt-2">{{ m.text_content|linebreaksbr }}</div>{% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted mb-0">No course materials published yet.</p>
+    {% endif %}
+</div>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Assignments</div>
+    {% if assignment_rows %}
+        <ul class="list-unstyled mb-0">
+        {% for row in assignment_rows %}
+            <li class="mb-3 pb-3 border-bottom">
+                <strong>{{ row.assignment.class_subject.subject.name }}</strong> — {{ row.assignment.title }}
+                <div class="text-muted small">Due: {{ row.assignment.deadline }} · Attempts: {{ row.assignment.max_attempts }}{% if row.assignment.overdue_reopened %} · <span class="text-warning">Late access reopened</span>{% endif %}</div>
+                {% for resource in row.assignment.resources.all %}<a href="{% if resource.file %}{{ resource.file.url }}{% else %}{{ resource.external_url }}{% endif %}" target="_blank" class="small me-2">View questions</a>{% endfor %}
+                {% if row.submission %}
+                    <span class="badge bg-info">{{ row.submission.get_status_display }}</span>
+                    {% if row.submission.marks_obtained is not None %}
+                        <span class="ms-2">Marks: {{ row.submission.marks_obtained }} / {{ row.assignment.max_marks }}</span>
+                    {% endif %}
+                    {% if row.submission.feedback %}
+                        <div class="text-muted small mt-1">Feedback: {{ row.submission.feedback }}</div>
+                    {% endif %}
+                    {% if row.assignment.allow_resubmission %}
+                        <form method="post" action="{% url 'dashboard:student_submit_assignment' row.assignment.pk %}" enctype="multipart/form-data" class="mt-2">
+                            {% csrf_token %}
+                            <textarea name="submitted_text" class="form-control form-control-sm mb-2" placeholder="Resubmission text (optional)"></textarea>
+                            <input type="file" name="submitted_file" class="form-control form-control-sm mb-2">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" data-submission-format="{{ row.assignment.submission_format }}">Resubmit</button>
+                        </form>
+                    {% endif %}
+                {% else %}
+                    <form method="post" action="{% url 'dashboard:student_submit_assignment' row.assignment.pk %}" enctype="multipart/form-data" class="mt-2">
+                        {% csrf_token %}
+                        <textarea name="submitted_text" class="form-control form-control-sm mb-2" placeholder="Your answer"></textarea>
+                        <input type="file" name="submitted_file" class="form-control form-control-sm mb-2">
+                        <button type="submit" class="btn btn-sm btn-secondary" data-submission-format="{{ row.assignment.submission_format }}">Submit</button>
+                    </form>
+                {% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted mb-0">No assignments yet.</p>
+    {% endif %}
+</div>
+
+{% for label, rows in task_sections %}<div class="card sms-stat-card p-3 mb-4"><div class="text-muted small mb-2">{{ label }}</div>{% if rows %}
+        <ul class="list-unstyled mb-0">
+        {% for row in rows %}
+            <li class="mb-2">
+                <strong>{{ row.quiz.class_subject.subject.name }}</strong> — {{ row.quiz.title }}
+                {% if row.attempt %}
+                    <span class="badge bg-info">
+                        {% if row.attempt.is_fully_graded %}Graded: {{ row.attempt.total_score }}{% else %}Submitted, pending grading{% endif %}
+                    </span>
+                {% else %}
+                    <span class="badge bg-secondary">Not attempted</span>
+                    <a class="btn btn-sm btn-outline-primary ms-2" href="{% url 'dashboard:student_quiz_attempt' row.quiz.pk %}">Attempt</a>
+                {% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted mb-0">No {{ label|lower }} available.</p>
+    {% endif %}
+</div>{% endfor %}
+<script>
+document.querySelectorAll('form[action*="student_submit_assignment"]').forEach(function (form) {
+    const text = form.querySelector('textarea[name="submitted_text"]');
+    const file = form.querySelector('input[type="file"]');
+    const button = form.querySelector('button[type="submit"]');
+    if (!button) return;
+    function isValid() {
+        const format = (button.dataset.submissionFormat || '').trim().toUpperCase();
+        const hasText = text && text.value.trim().length > 0;
+        const hasFile = file && file.files.length > 0;
+        return format === 'FILE_UPLOAD' ? hasFile : format === 'TEXT_ENTRY' ? hasText : (hasText || hasFile);
+    }
+    form.addEventListener('submit', function (event) {
+        if (!isValid()) {
+            event.preventDefault();
+            window.alert('Add the required answer text or file before submitting.');
+        }
+    });
+});
+</script>
+{% endblock %}

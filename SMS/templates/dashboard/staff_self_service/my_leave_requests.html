@@ -1,0 +1,50 @@
+<!-- Absolute path: SMS/templates/dashboard/staff_self_service/my_leave_requests.html -->
+{% extends "base.html" %}
+{% block title %}My Leave Requests — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">My Leave Requests</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">My Leave Requests</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Submit a Leave Request</div>
+    <form method="post" class="row g-2">
+        {% csrf_token %}
+        <div class="col-md-3">
+            <select name="leave_type" class="form-select" required>
+                {% for value, label in leave_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3"><input type="date" name="start_date" class="form-control" required></div>
+        <div class="col-md-3"><input type="date" name="end_date" class="form-control" required></div>
+        <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Submit</button></div>
+        <div class="col-12"><textarea name="reason" class="form-control" placeholder="Reason" rows="2"></textarea></div>
+    </form>
+</div>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Type</th><th>Dates</th><th>Status</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+        {% for lr in leave_requests %}
+            <tr>
+                <td>{{ lr.get_leave_type_display }}</td>
+                <td>{{ lr.start_date }} → {{ lr.end_date }}</td>
+                <td><span class="badge bg-secondary">{{ lr.get_status_display }}</span></td>
+                <td>{{ lr.decision_notes|default:"—" }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4" class="text-muted">No leave requests submitted yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

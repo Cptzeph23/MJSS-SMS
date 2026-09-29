@@ -1,0 +1,70 @@
+<!-- Absolute path: SMS/templates/dashboard/academic_admin/student_detail.html -->
+{% extends "dashboard/academic_admin/_academic_admin_base.html" %}
+{% block title %}{{ student.admission_number }} — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:academic_admin_students' %}">Students</a></li>
+    <li class="breadcrumb-item active">{{ student.admission_number }}</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">{{ student.user.get_full_name|default:student.user.username }}</h3>
+<p class="text-muted mb-4">
+    {{ student.admission_number }} &middot; {{ student.current_class|default:"No class" }} - {{ student.current_stream|default:"No stream" }}
+    &middot; <span class="badge bg-secondary">{{ student.get_status_display }}</span>
+</p>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small mb-2">Change Student Status</div>
+            <form method="post" class="d-flex gap-2">
+                {% csrf_token %}
+                <select name="status" class="form-select">
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if student.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="reason" class="form-control" placeholder="Reason (optional)">
+                <button type="submit" class="btn btn-primary text-nowrap">Update</button>
+            </form>
+        </div>
+
+        <div class="card sms-stat-card p-3 mt-3">
+            <div class="text-muted small mb-2">Guardian Information</div>
+            <ul class="list-unstyled mb-0">
+                {% for sg in guardians %}
+                    <li class="py-1 border-bottom">
+                        {{ sg.guardian.first_name }} {{ sg.guardian.last_name }} ({{ sg.guardian.relationship }})
+                        &middot; {{ sg.guardian.phone_number }}
+                        {% if sg.is_primary_contact %} <span class="badge bg-secondary">Primary</span>{% endif %}
+                    </li>
+                {% empty %}
+                    <li class="text-muted">No guardians on file.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small mb-2">Academic History — Enrollments</div>
+            <table class="table mb-0">
+                <thead><tr><th>Subject</th><th>Academic Year</th><th>Status</th></tr></thead>
+                <tbody>
+                {% for e in enrollments %}
+                    <tr>
+                        <td>{{ e.class_subject.subject.name }}</td>
+                        <td>{{ e.academic_year }}</td>
+                        <td>{{ e.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3" class="text-muted">No enrollment history.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

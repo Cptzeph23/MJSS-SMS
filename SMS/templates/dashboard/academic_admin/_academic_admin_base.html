@@ -1,0 +1,9 @@
+<!-- Absolute path: SMS/templates/dashboard/academic_admin/_academic_admin_base.html -->
+{% extends "base.html" %}
+
+{% block sidebar_items %}
+    <li class="nav-item"><a class="nav-link {% if active == 'overview' %}active{% endif %}" href="{% url 'dashboard:academic_admin_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'students' %}active{% endif %}" href="{% url 'dashboard:academic_admin_students' %}"><i class="bi bi-people me-2"></i>Students</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'results' %}active{% endif %}" href="{% url 'dashboard:academic_admin_results_approval' %}"><i class="bi bi-check2-square me-2"></i>Result Approvals</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'attendance' %}active{% endif %}" href="{% url 'dashboard:academic_admin_attendance_correction' %}"><i class="bi bi-calendar-check me-2"></i>Attendance Correction</a></li>
+{% endblock %}

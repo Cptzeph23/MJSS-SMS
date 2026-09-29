@@ -1,0 +1,41 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/announcements.html -->
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}Announcements — {{ class_subject }} — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:teacher_classes' %}">My Classes</a></li>
+    <li class="breadcrumb-item active">Announcements</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">{{ class_subject.class_group }} - {{ class_subject.subject.name }}</h3>
+<p class="text-muted mb-4">Course Announcements</p>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <form method="post" class="row g-2">
+        {% csrf_token %}
+        <div class="col-md-4">
+            <input type="text" name="title" class="form-control" placeholder="Title" required>
+        </div>
+        <div class="col-md-6">
+            <input type="text" name="body" class="form-control" placeholder="Message">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">Post</button>
+        </div>
+    </form>
+</div>
+
+<div class="card sms-stat-card p-3">
+    {% for d in discussions %}
+        <div class="border-bottom py-2">
+            <div class="fw-semibold">{{ d.title }}{% if d.is_pinned %} <span class="badge bg-secondary">Pinned</span>{% endif %}</div>
+            <div class="text-muted small">{{ d.created_at }}</div>
+            <div>{{ d.body }}</div>
+        </div>
+    {% empty %}
+        <p class="text-muted mb-0">No announcements posted yet for this class.</p>
+    {% endfor %}
+</div>
+{% endblock %}

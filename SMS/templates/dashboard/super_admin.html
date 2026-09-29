@@ -1,0 +1,102 @@
+<!-- Absolute path: SMS/templates/dashboard/super_admin.html -->
+{% extends "base.html" %}
+{% block title %}Super Admin Dashboard — SMS{% endblock %}
+
+{% block sidebar_items %}
+    {% include "dashboard/super_admin/_sidebar.html" %}
+{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Super Admin</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Super Admin Overview</h3>
+
+<div class="row g-3">
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Total Students</div>
+            <div class="fs-3 fw-semibold">{{ total_students }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Total Staff</div>
+            <div class="fs-3 fw-semibold">{{ total_staff }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Active Classes</div>
+            <div class="fs-3 fw-semibold">{{ active_classes }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Current Academic Year</div>
+            <div class="fs-5 fw-semibold">{% if current_academic_years %}{{ current_academic_years|length }} configured{% else %}— not set —{% endif %}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Current Term</div>
+            <div class="fs-5 fw-semibold">{% if current_terms %}{{ current_terms|length }} configured{% else %}— not set —{% endif %}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Fees Collected</div>
+            <div class="fs-5 fw-semibold">
+                {% if financial_summary %}{{ financial_summary.total_collected|default:"0" }}{% else %}—{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Outstanding Fees</div>
+            <div class="fs-5 fw-semibold {% if financial_summary.outstanding_balance %}text-danger{% endif %}">
+                {% if financial_summary %}{{ financial_summary.outstanding_balance|default:"0" }}{% else %}—{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Attendance (last {{ attendance_summary.window_days|default:30 }} days)</div>
+            <div class="fs-5 fw-semibold">
+                {% if attendance_summary.attendance_rate_percent is not None %}
+                    {{ attendance_summary.attendance_rate_percent }}%
+                    <span class="text-muted small fw-normal">({{ attendance_summary.present_count }}/{{ attendance_summary.total_records }})</span>
+                {% else %}
+                    <span class="text-muted">No records yet</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card sms-stat-card mt-4 p-3">
+    <div class="text-muted small mb-2">Registered Schools</div>
+    <div class="row g-2">{% for school in schools %}<div class="col-md-4"><span class="badge {% if school.is_active %}bg-success{% else %}bg-secondary{% endif %}">{{ school.name }}</span></div>{% empty %}<div class="text-muted">No schools configured.</div>{% endfor %}</div>
+</div>
+
+<div class="card sms-stat-card mt-4 p-3">
+    <div class="text-muted small mb-2">Recent Activity</div>
+    {% if recent_audit_logs %}
+        <ul class="list-unstyled mb-0">
+            {% for entry in recent_audit_logs %}
+                <li class="py-2 border-bottom">
+                    <span class="text-muted small">{{ entry.created_at|date:"M j, Y H:i" }}</span>
+                    — <strong>{{ entry.actor|default:"System" }}</strong>
+                    {{ entry.get_action_display }}
+                    {% if entry.target_model %}<span class="text-muted">{{ entry.target_model }}</span>{% endif %}
+                    {% if entry.description %}<span class="text-muted">— {{ entry.description }}</span>{% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="text-muted">No recent activity recorded yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

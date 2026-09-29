@@ -1,0 +1,46 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/marks_entry.html -->
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}Enter Marks — {{ assessment.title }} — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:teacher_assessments' %}">Assessments</a></li>
+    <li class="breadcrumb-item active">{{ assessment.title }}</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">{{ assessment.title }}</h3>
+<p class="text-muted mb-4">
+    {{ assessment.class_subject.class_group }} - {{ assessment.class_subject.subject.name }}
+    &middot; Max marks: {{ assessment.component.max_marks }}
+    &middot; Status: <span class="badge bg-secondary">{{ assessment.get_workflow_status_display }}</span>
+</p>
+
+<form method="post" class="card sms-stat-card p-3">
+    {% csrf_token %}
+    <table class="table align-middle mb-3">
+        <thead>
+            <tr><th>Student</th><th style="width: 160px;">Mark</th></tr>
+        </thead>
+        <tbody>
+        {% for row in student_rows %}
+            <tr>
+                <td>{{ row.student }}</td>
+                <td>
+                    <input type="number" step="0.01" name="mark_{{ row.student.pk }}" class="form-control"
+                           value="{{ row.mark.marks_obtained|default:'' }}">
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="2" class="text-muted">No students enrolled in this class/subject yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Save Marks</button>
+        <button type="submit" name="action" value="submit_for_review" class="btn btn-outline-secondary">
+            Submit for Review
+        </button>
+    </div>
+</form>
+{% endblock %}

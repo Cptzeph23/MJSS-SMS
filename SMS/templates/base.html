@@ -1,0 +1,202 @@
+<!-- Absolute path: SMS/templates/base.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}School Management System{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* =====================================================================
+           SMS color system — jungle green + charcoal.
+           Defined once as CSS custom properties so every dashboard template
+           (which all extend this file) picks it up automatically — no
+           per-template color edits needed. Bootstrap's own --bs-primary etc.
+           are also overridden below so built-in components (buttons, badges,
+           links, form focus rings) repaint without extra classes.
+           ===================================================================== */
+        :root {
+            --sms-jungle-900: #0b3d2e;   /* deepest green — sidebar */
+            --sms-jungle-700: #145c3f;   /* primary actions, active states */
+            --sms-jungle-500: #1f7a52;   /* buttons, links, accents */
+            --sms-jungle-300: #4fa77d;   /* hover tints, secondary accents */
+            --sms-jungle-100: #e3f3ec;   /* soft green backgrounds/badges */
+            --sms-charcoal-900: #1c1f22; /* body text */
+            --sms-charcoal-700: #383e42; /* secondary text */
+            --sms-charcoal-400: #6b7278; /* muted text */
+            --sms-charcoal-200: #e4e7e9; /* borders */
+            --sms-charcoal-100: #f4f6f5; /* page background */
+            --sms-amber: #d9822b;        /* warnings/attention accent, not red */
+            --sms-danger: #b3432f;       /* errors/overdue — muted brick, not pure red */
+        }
+
+        body {
+            background-color: var(--sms-charcoal-100);
+            color: var(--sms-charcoal-900);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        /* --- Bootstrap primary repainted to jungle green --- */
+        .btn-primary {
+            background-color: var(--sms-jungle-500);
+            border-color: var(--sms-jungle-500);
+        }
+        .btn-primary:hover, .btn-primary:focus, .btn-primary:active {
+            background-color: var(--sms-jungle-700) !important;
+            border-color: var(--sms-jungle-700) !important;
+        }
+        .btn-outline-primary {
+            color: var(--sms-jungle-700);
+            border-color: var(--sms-jungle-500);
+        }
+        .btn-outline-primary:hover {
+            background-color: var(--sms-jungle-500);
+            border-color: var(--sms-jungle-500);
+        }
+        a { color: var(--sms-jungle-700); }
+        a:hover { color: var(--sms-jungle-900); }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--sms-jungle-300);
+            box-shadow: 0 0 0 .2rem rgba(31, 122, 82, .15);
+        }
+        .badge.bg-secondary { background-color: var(--sms-charcoal-400) !important; }
+        .badge.bg-success { background-color: var(--sms-jungle-500) !important; }
+        .badge.bg-danger { background-color: var(--sms-danger) !important; }
+        .text-danger { color: var(--sms-danger) !important; }
+        .text-success { color: var(--sms-jungle-700) !important; }
+
+        /* --- Sidebar: deep jungle green, not charcoal-black --- */
+        .sms-sidebar {
+            min-height: 100vh;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            background-color: var(--sms-jungle-900);
+            color: #cfe6db;
+        }
+        .sms-sidebar .sms-brand { color: #ffffff; }
+        .sms-sidebar a { color: #cfe6db; text-decoration: none; }
+        .sms-sidebar a.active {
+            color: #ffffff;
+            background-color: var(--sms-jungle-700);
+            font-weight: 500;
+        }
+        .sms-sidebar a:hover:not(.active) { color: #ffffff; background-color: rgba(255,255,255,.08); }
+        .sms-sidebar a.disabled { color: #6f9484; }
+        .sms-sidebar .nav-link { padding: .6rem 1rem; border-radius: .5rem; transition: background-color .15s ease; }
+
+        /* --- Top nav: warm off-white, charcoal text, subtle green-tinted border --- */
+        .sms-topnav {
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--sms-charcoal-200);
+        }
+        .sms-topnav .btn-light {
+            background-color: var(--sms-charcoal-100);
+            border-color: var(--sms-charcoal-200);
+            color: var(--sms-charcoal-700);
+        }
+        .sms-topnav .btn-light:hover { background-color: var(--sms-jungle-100); }
+        .d-flex > .flex-grow-1 { height: 100vh; overflow-y: auto; min-width: 0; }
+
+        /* --- Stat cards: clean, elevated, jungle-green accent bar --- */
+        .sms-stat-card {
+            border: none;
+            border-radius: .85rem;
+            box-shadow: 0 1px 3px rgba(28, 31, 34, .08);
+            border-left: 4px solid var(--sms-jungle-500);
+        }
+        .sms-stat-card.sms-accent-amber { border-left-color: var(--sms-amber); }
+        .sms-stat-card.sms-accent-danger { border-left-color: var(--sms-danger); }
+        .sms-stat-card.sms-accent-charcoal { border-left-color: var(--sms-charcoal-400); }
+
+        .breadcrumb-item.active { color: var(--sms-charcoal-400); }
+        .breadcrumb-item a { color: var(--sms-jungle-700); text-decoration: none; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+<div class="d-flex">
+    <nav class="sms-sidebar p-3" style="width: 260px; flex-shrink: 0;">
+        <div class="fs-4 fw-semibold sms-brand mb-4">
+            <i class="bi bi-mortarboard-fill"></i> SMS
+        </div>
+        <ul class="nav flex-column gap-1">
+            <li class="nav-item">
+                <a class="nav-link" href="{% url 'dashboard:home' %}">
+                    <i class="bi bi-speedometer2 me-2"></i>Dashboard
+                </a>
+            </li>
+            {% block sidebar_items %}{% endblock %}
+        </ul>
+    </nav>
+
+    <div class="flex-grow-1">
+        <nav class="sms-topnav d-flex align-items-center justify-content-between px-4 py-2">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    {% block breadcrumbs %}
+                        <li class="breadcrumb-item active">Dashboard</li>
+                    {% endblock %}
+                </ol>
+            </nav>
+            <div class="d-flex align-items-center gap-3">
+                <div class="dropdown">
+                    <button class="btn btn-light position-relative" title="Notifications" data-bs-toggle="dropdown" type="button" aria-label="Notifications">
+                        <i class="bi bi-bell"></i><span id="notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger{% if not unread_notification_count %} d-none{% endif %}">{{ unread_notification_count }}</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end p-2" style="min-width:320px" id="notification-menu"><li class="dropdown-header">Notifications</li>{% for notification in dashboard_notifications %}<li><a class="dropdown-item {% if not notification.is_read %}fw-semibold{% endif %}" href="{% url 'dashboard:notification_open' notification.pk %}"><div>{{ notification.title }}</div><small class="text-muted">{{ notification.message|truncatechars:80 }}</small></a></li>{% empty %}<li class="dropdown-item-text text-muted">No notifications.</li>{% endfor %}</ul>
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown" type="button">
+                        <i class="bi bi-person-circle me-1"></i>{{ request.user.get_full_name|default:request.user.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><span class="dropdown-item-text text-muted small">{{ request.user.get_role_display }}</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% if request.user.is_authenticated and request.user.staff_profile %}
+                            <li><a class="dropdown-item" href="{% url 'dashboard:my_leave_requests' %}"><i class="bi bi-envelope-paper me-2"></i>My Leave Requests</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        <li><a class="dropdown-item" href="{% url 'dashboard:logout' %}">Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <main class="p-4">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+<script>
+(function () {
+    const feedUrl = "{% url 'dashboard:notification_feed' %}";
+    const badge = document.getElementById("notification-badge");
+    const menu = document.getElementById("notification-menu");
+    if (!badge || !menu) return;
+    function refreshNotifications() {
+        fetch(feedUrl, {headers: {"X-Requested-With": "XMLHttpRequest"}}).then(r => r.json()).then(data => {
+            badge.textContent = data.unread_count;
+            badge.classList.toggle("d-none", !data.unread_count);
+            const rows = data.notifications.length ? data.notifications.map(n => '<li><a class="dropdown-item ' + (n.is_read ? '' : 'fw-semibold') + '" href="/notifications/' + n.id + '/open/"><div>' + n.title + '</div><small class="text-muted">' + n.message + '</small></a></li>').join('') : '<li class="dropdown-item-text text-muted">No notifications.</li>';
+            menu.innerHTML = '<li class="dropdown-header">Notifications</li>' + rows;
+        }).catch(() => {});
+    }
+    setInterval(refreshNotifications, 30000);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

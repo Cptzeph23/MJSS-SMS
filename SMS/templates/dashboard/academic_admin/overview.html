@@ -1,0 +1,89 @@
+<!-- Absolute path: SMS/templates/dashboard/academic_admin/overview.html -->
+{% extends "dashboard/academic_admin/_academic_admin_base.html" %}
+{% block title %}Academic Admin Overview — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Academic Admin</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">Academic Admin Overview</h3>
+<p class="text-muted mb-4">Students, enrollment, and result-approval status across the school.</p>
+
+<div class="row g-3">
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="text-muted small">Active Students</div>
+                    <div class="fs-3 fw-semibold">{{ summary.total_students }}</div>
+                </div>
+                <i class="bi bi-mortarboard fs-4" style="color: var(--sms-jungle-500);"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card sms-accent-charcoal p-3 h-100">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="text-muted small">Academic Year</div>
+                    <div class="fs-5 fw-semibold">{{ summary.current_academic_year|default:"— not set —" }}</div>
+                    <div class="text-muted small">{{ summary.current_term|default:"No term set" }}</div>
+                </div>
+                <i class="bi bi-calendar3 fs-4 text-secondary"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card {% if summary.pending_result_approvals %}sms-accent-amber{% endif %} p-3 h-100">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="text-muted small">Pending Result Approvals</div>
+                    <div class="fs-3 fw-semibold">{{ summary.pending_result_approvals }}</div>
+                </div>
+                <i class="bi bi-hourglass-split fs-4" style="color: var(--sms-amber);"></i>
+            </div>
+            {% if summary.pending_result_approvals %}
+                <a href="{% url 'dashboard:academic_admin_results_approval' %}" class="stretched-link small mt-1">Review queue →</a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="text-muted small">Manage Students</div>
+                    <div class="fs-6 fw-semibold">Registration &amp; profiles</div>
+                </div>
+                <i class="bi bi-people fs-4" style="color: var(--sms-jungle-500);"></i>
+            </div>
+            <a href="{% url 'dashboard:academic_admin_students' %}" class="stretched-link small mt-1">Open student list →</a>
+        </div>
+    </div>
+</div>
+
+<div class="card sms-stat-card mt-4 p-3">
+    <div class="text-muted small text-uppercase fw-semibold mb-3">Students by Status</div>
+    {% with total=summary.total_students %}
+    <div class="row g-3">
+        {% for row in summary.status_breakdown %}
+            {% if row.count %}
+                <div class="col-md-3 col-sm-6">
+                    <div class="d-flex justify-content-between align-items-center p-2 rounded"
+                         style="background-color: var(--sms-charcoal-100);">
+                        <span>{{ row.label }}</span>
+                        <span class="badge rounded-pill" style="background-color: var(--sms-jungle-100); color: var(--sms-jungle-900);">
+                            {{ row.count }}
+                        </span>
+                    </div>
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% endwith %}
+    {% if not summary.status_breakdown %}
+        <div class="text-muted">No students registered yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

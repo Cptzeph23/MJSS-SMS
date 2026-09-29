@@ -1,0 +1,88 @@
+<!-- Absolute path: SMS/templates/dashboard/student/academic.html -->
+{% extends "dashboard/student/_student_base.html" %}
+{% block title %}Academic — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Academic</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Academic</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Current Term Results</div>
+    {% if subject_rows %}
+    <table class="table table-sm">
+        <thead><tr><th>Subject</th><th>Score</th><th>Grade</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for row in subject_rows %}
+            <tr>
+                <td>{{ row.subject }}</td>
+                <td>{{ row.score|default:"—" }}</td>
+                <td>{{ row.grade }}</td>
+                <td>{% if row.is_complete %}<span class="badge bg-success">Complete</span>{% else %}<span class="badge bg-secondary">In progress</span>{% endif %}{% if row.total_tasks %}<div class="text-muted small">{{ row.completed_tasks }}/{{ row.total_tasks }} tasks graded</div>{% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted mb-0">No results available for the current term yet.</p>
+    {% endif %}
+</div>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Tasks Pending Completion</div>
+    {% if pending_tasks %}
+    <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Subject</th><th>Task</th><th>Reason</th><th></th></tr></thead>
+        <tbody>{% for task in pending_tasks %}<tr><td>{{ task.subject }}</td><td><span class="badge bg-secondary me-1">{{ task.category }}</span>{{ task.title }}</td><td>{{ task.reason }}</td><td class="text-end">{% if task.quiz_id %}<a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:student_quiz_attempt' task.quiz_id %}">Open task</a>{% elif task.assignment_id %}<a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:student_lms' %}">Open Learning</a>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="text-success mb-0">All current-term tasks have been graded.</p>{% endif %}
+</div>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Graded Quiz Results</div>
+    {% if quiz_rows %}
+    <table class="table table-sm">
+        <thead><tr><th>Subject</th><th>Quiz</th><th>Score</th><th>Grade</th></tr></thead>
+        <tbody>
+        {% for row in quiz_rows %}
+            <tr>
+                <td>{{ row.subject }}</td>
+                <td>{{ row.title }}</td>
+                <td>{{ row.score }} / {{ row.maximum }} ({{ row.percentage }}%)</td>
+                <td>{{ row.grade }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted mb-0">No fully graded quizzes for the current term.</p>
+    {% endif %}
+</div>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Report Books</div>
+    {% if report_cards %}
+        <ul class="list-unstyled mb-0">
+        {% for card in report_cards %}
+            <li class="mb-2">
+                {{ card.term }} —
+                <a href="{% url 'dashboard:report_card_html' card.pk %}">View</a> |
+                <a href="{% url 'dashboard:report_card_pdf' card.pk %}">Download PDF</a>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted mb-0">No report books have been generated yet.</p>
+    {% endif %}
+</div>
+
+<div class="card sms-stat-card p-3">
+    <div class="text-muted small mb-2">Transcript</div>
+    <a href="{% url 'dashboard:transcript_download' student.pk %}" class="btn btn-outline-secondary btn-sm">
+        Download Transcript (PDF)
+    </a>
+</div>
+{% endblock %}

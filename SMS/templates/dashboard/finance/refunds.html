@@ -1,0 +1,44 @@
+<!-- Absolute path: SMS/templates/dashboard/finance/refunds.html -->
+{% extends "dashboard/finance/_finance_base.html" %}
+{% block title %}Refunds — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Refunds</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Refund Requests</h3>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Refund #</th><th>Student</th><th>Payment</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for r in refunds %}
+            <tr>
+                <td>{{ r.refund_number }}</td>
+                <td>{{ r.payment.invoice.student.admission_number }} — {{ r.payment.invoice.student.user.get_full_name|default:r.payment.invoice.student.user.username }}</td>
+                <td>{{ r.payment.payment_number }}</td>
+                <td>{{ r.amount }}</td>
+                <td>{{ r.reason }}</td>
+                <td><span class="badge bg-secondary">{{ r.get_status_display }}</span></td>
+                <td class="text-end">
+                    {% if r.status == "REQUESTED" %}
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="refund_id" value="{{ r.pk }}">
+                            <button type="submit" name="action" value="approve" class="btn btn-sm btn-outline-success">Approve</button>
+                            <button type="submit" name="action" value="reject" class="btn btn-sm btn-outline-danger">Reject</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="7" class="text-muted">No refund requests.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,79 @@
+<!-- Absolute path: SMS/templates/dashboard/finance/overview.html -->
+{% extends "dashboard/finance/_finance_base.html" %}
+{% block title %}Finance Overview — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Finance Overview</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Finance Overview</h3>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Total Billed</div>
+            <div class="fs-4 fw-semibold">{{ summary.total_billed|default:"0" }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Total Collected</div>
+            <div class="fs-4 fw-semibold">{{ summary.total_collected|default:"0" }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Outstanding Balance</div>
+            <div class="fs-4 fw-semibold">{{ summary.outstanding_balance|default:"0" }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Arrears</div>
+            <div class="fs-4 fw-semibold text-danger">{{ summary.arrears|default:"0" }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Overdue Invoices</div>
+            <div class="fs-4 fw-semibold">{{ summary.overdue_invoice_count|default:"0" }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Unpaid Invoices</div>
+            <div class="fs-4 fw-semibold">{{ summary.unpaid_invoice_count|default:"0" }}</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Pending Refunds</div>
+            <div class="fs-4 fw-semibold">{{ pending_refunds }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card sms-stat-card p-3">
+    <div class="text-muted small mb-2">Recent Payments</div>
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+        {% for p in recent_payments %}
+            <tr>
+                <td>{{ p.payment_number }}</td>
+                <td>{{ p.invoice.student.admission_number }} — {{ p.invoice.student.user.get_full_name|default:p.invoice.student.user.username }}</td>
+                <td>{{ p.amount }}</td>
+                <td>{{ p.get_payment_method_display }}</td>
+                <td>{{ p.payment_date }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5" class="text-muted">No payments recorded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

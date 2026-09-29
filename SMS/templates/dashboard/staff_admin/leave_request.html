@@ -1,0 +1,45 @@
+<!-- Absolute path: SMS/templates/dashboard/staff_admin/leave_requests.html -->
+{% extends "dashboard/staff_admin/_staff_admin_base.html" %}
+{% block title %}Leave Requests — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Leave Requests</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Leave Requests</h3>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Staff</th><th>Type</th><th>Dates</th><th>Reason</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for lr in leave_requests %}
+            <tr>
+                <td>{{ lr.staff.staff_id }} — {{ lr.staff.user.get_full_name|default:lr.staff.user.username }}</td>
+                <td>{{ lr.get_leave_type_display }}</td>
+                <td>{{ lr.start_date }} → {{ lr.end_date }}</td>
+                <td>{{ lr.reason|default:"—" }}</td>
+                <td><span class="badge bg-secondary">{{ lr.get_status_display }}</span></td>
+                <td class="text-end">
+                    {% if lr.status == "PENDING" %}
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="leave_request_id" value="{{ lr.pk }}">
+                            <button type="submit" name="action" value="approve" class="btn btn-sm btn-outline-success">Approve</button>
+                            <button type="submit" name="action" value="reject" class="btn btn-sm btn-outline-danger">Reject</button>
+                        </form>
+                    {% else %}
+                        <span class="text-muted small">{{ lr.decision_notes|default:"" }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6" class="text-muted">No leave requests.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

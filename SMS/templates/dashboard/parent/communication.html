@@ -1,0 +1,48 @@
+<!-- Absolute path: SMS/templates/dashboard/parent/communication.html -->
+{% extends "dashboard/parent/_parent_base.html" %}
+{% block title %}Communication — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Communication</li>
+{% endblock %}
+
+{% block content %}
+{% with active="communication" %}{% endwith %}
+<h3 class="mb-4">Communication</h3>
+
+<h5>Announcements</h5>
+<div class="list-group mb-4">
+    {% for announcement in announcements %}
+    <div class="list-group-item">
+        <div class="d-flex justify-content-between">
+            <strong>{{ announcement.title }}</strong>
+            <small class="text-muted">{{ announcement.created_at|date:"M d, Y" }}</small>
+        </div>
+        <div class="text-muted small mt-1">{{ announcement.body }}</div>
+    </div>
+    {% empty %}
+    <div class="list-group-item text-muted">No announcements right now.</div>
+    {% endfor %}
+</div>
+
+<h5>Notifications</h5>
+<div class="list-group">
+    {% for notification in notifications %}
+    <div class="list-group-item d-flex justify-content-between align-items-center {% if not notification.is_read %}fw-semibold{% endif %}">
+        <div>
+            <div>{{ notification.title }}</div>
+            <div class="text-muted small">{{ notification.message }}</div>
+        </div>
+        {% if not notification.is_read %}
+        <form method="post" action="{% url 'dashboard:parent_mark_notification_read' notification.pk %}">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Mark read</button>
+        </form>
+        {% endif %}
+    </div>
+    {% empty %}
+    <div class="list-group-item text-muted">No notifications yet.</div>
+    {% endfor %}
+</div>
+{% endblock %}

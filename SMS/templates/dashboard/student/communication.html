@@ -1,0 +1,54 @@
+<!-- Absolute path: SMS/templates/dashboard/student/communication.html -->
+{% extends "dashboard/student/_student_base.html" %}
+{% block title %}Communication — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Communication</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Communication</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Announcements</div>
+    {% if announcements %}
+        <ul class="list-unstyled mb-0">
+        {% for a in announcements %}
+            <li class="mb-2 pb-2 border-bottom">
+                <strong>{{ a.title }}</strong>
+                <div class="text-muted small">{{ a.created_at|date:"M d, Y" }}</div>
+                <div>{{ a.body }}</div>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted mb-0">No announcements yet.</p>
+    {% endif %}
+</div>
+
+<div class="card sms-stat-card p-3">
+    <div class="text-muted small mb-2">Notifications</div>
+    {% if notifications %}
+        <ul class="list-unstyled mb-0">
+        {% for n in notifications %}
+            <li class="mb-2 pb-2 border-bottom d-flex justify-content-between align-items-start">
+                <div>
+                    <strong>{{ n.title }}</strong>{% if not n.is_read %} <span class="badge bg-danger">New</span>{% endif %}
+                    <div class="text-muted small">{{ n.created_at|date:"M d, Y H:i" }}</div>
+                    <div>{{ n.message }}</div>
+                </div>
+                {% if not n.is_read %}
+                <form method="post" action="{% url 'dashboard:student_mark_notification_read' n.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Mark read</button>
+                </form>
+                {% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted mb-0">No notifications yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

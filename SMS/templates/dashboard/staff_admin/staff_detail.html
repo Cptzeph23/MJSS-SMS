@@ -1,0 +1,73 @@
+<!-- Absolute path: SMS/templates/dashboard/staff_admin/staff_detail.html -->
+{% extends "dashboard/staff_admin/_staff_admin_base.html" %}
+{% block title %}{{ staff.staff_id }} — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:staff_admin_staff_list' %}">Staff</a></li>
+    <li class="breadcrumb-item active">{{ staff.staff_id }}</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">{{ staff.user.get_full_name|default:staff.user.username }}</h3>
+<p class="text-muted mb-4">
+    {{ staff.staff_id }} &middot; {{ staff.department|default:"No department" }}
+    &middot; <span class="badge {% if staff.is_active %}bg-success{% else %}bg-secondary{% endif %}">{{ staff.get_employment_status_display }}</span>
+</p>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small mb-2">Edit Profile</div>
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-2">
+                    <label class="form-label small">Job Title</label>
+                    <input type="text" name="job_title" class="form-control" value="{{ staff.job_title }}">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Emergency Contact Name</label>
+                    <input type="text" name="emergency_contact_name" class="form-control" value="{{ staff.emergency_contact_name }}">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Emergency Contact Phone</label>
+                    <input type="text" name="emergency_contact_phone" class="form-control" value="{{ staff.emergency_contact_phone }}">
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+            </form>
+        </div>
+
+        <div class="card sms-stat-card p-3 mt-3">
+            <div class="text-muted small mb-2">Employment Status</div>
+            {% if staff.is_active %}
+                <form method="post" class="d-flex gap-2">
+                    {% csrf_token %}
+                    <input type="text" name="reason" class="form-control form-control-sm" placeholder="Reason (optional)">
+                    <button type="submit" name="action" value="deactivate" class="btn btn-outline-danger btn-sm text-nowrap">Deactivate</button>
+                </form>
+            {% else %}
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="reactivate" class="btn btn-outline-success btn-sm">Reactivate</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small mb-2">Qualifications & Certifications</div>
+            <ul class="list-unstyled mb-0">
+                {% for q in qualifications %}
+                    <li class="py-1 border-bottom">
+                        {{ q.title }} — {{ q.get_qualification_type_display }}
+                        {% if q.institution %} ({{ q.institution }}{% if q.year_obtained %}, {{ q.year_obtained }}{% endif %}){% endif %}
+                    </li>
+                {% empty %}
+                    <li class="text-muted">No qualifications on file.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+<!-- Absolute path: SMS/templates/dashboard/finance/invoices.html -->
+{% extends "dashboard/finance/_finance_base.html" %}
+{% block title %}Invoices — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Invoices</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Invoices</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Generate Invoice</div>
+    <form method="post" class="row g-2">
+        {% csrf_token %}
+        <div class="col-md-4">
+            <select name="student_id" class="form-select" required>
+                <option value="">Student</option>
+                {% for s in students %}
+                    <option value="{{ s.pk }}">{{ s.admission_number }} — {{ s.user.get_full_name|default:s.user.username }}</option>
+                {% endfor %}
+            </select>
+            {% if not students %}<div class="form-text text-danger">No active students are available for this school.</div>{% endif %}
+        </div>
+        <div class="col-md-4">
+            <select name="fee_structure_id" class="form-select" required>
+                <option value="">Fee Structure</option>
+                {% for fs in fee_structures %}
+                    <option value="{{ fs.pk }}">{{ fs.name }} ({{ fs.academic_year }} - {{ fs.term }})</option>
+                {% endfor %}
+            </select>
+            {% if not fee_structures %}<div class="form-text text-danger">No active fee structures are available for this school.</div>{% endif %}
+        </div>
+        <div class="col-md-3">
+            <input type="date" name="due_date" class="form-control" required>
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary w-100">Generate</button>
+        </div>
+    </form>
+</div>
+
+<div class="card sms-stat-card p-3 mb-3">
+    <form method="get" class="row g-2">
+        <div class="col-md-3">
+            <select name="status" class="form-select" onchange="this.form.submit()">
+                <option value="">All statuses</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+</div>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Invoice #</th><th>Student</th><th>Term</th><th>Total</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for invoice in invoices %}
+            <tr>
+                <td>{{ invoice.invoice_number }}</td>
+                <td>{{ invoice.student.admission_number }} — {{ invoice.student.user.get_full_name|default:invoice.student.user.username }}</td>
+                <td>{{ invoice.academic_year }} - {{ invoice.term }}</td>
+                <td>{{ invoice.total_amount }}</td>
+                <td><span class="badge bg-secondary">{{ invoice.get_status_display }}</span></td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:finance_invoice_detail' invoice.pk %}">View</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6" class="text-muted">No invoices found.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

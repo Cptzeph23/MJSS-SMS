@@ -1,0 +1,60 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/submissions.html -->
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}Submissions — {{ assignment.title }} — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:teacher_assignments' %}">Assignments</a></li>
+    <li class="breadcrumb-item active">{{ assignment.title }}</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-1">{{ assignment.title }}</h3>
+<p class="text-muted">Deadline: {{ assignment.deadline }} &middot; Max marks: {{ assignment.max_marks }}</p>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Student</th><th>Status</th><th>Submitted</th><th>Marks</th><th>Feedback</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for submission in submissions %}
+            <tr>
+                <td>{{ submission.student }}</td>
+                <td>{{ submission.get_status_display }}{% if submission.is_late %} <span class="badge bg-danger">Late</span>{% endif %}</td>
+                <td>{{ submission.submitted_at }}</td>
+                <td>{{ submission.marks_obtained|default:"—" }}</td>
+                <td>{{ submission.feedback|default:"—" }}</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#grade-{{ submission.pk }}">
+                        Grade
+                    </button>
+                </td>
+            </tr>
+            <tr class="collapse" id="grade-{{ submission.pk }}">
+                <td colspan="6">
+                    <form method="post" class="row g-2 align-items-center">
+                        {% csrf_token %}
+                        <input type="hidden" name="submission_id" value="{{ submission.pk }}">
+                        <div class="col-md-2">
+                            <input type="number" step="0.01" name="marks_obtained" class="form-control"
+                                   placeholder="Marks" value="{{ submission.marks_obtained|default:'' }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" name="feedback" class="form-control" placeholder="Feedback"
+                                   value="{{ submission.feedback }}">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary btn-sm">Save Grade</button>
+                        </div>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6" class="text-muted">No submissions yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

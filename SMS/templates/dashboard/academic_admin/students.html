@@ -1,0 +1,61 @@
+<!-- Absolute path: SMS/templates/dashboard/academic_admin/students.html -->
+{% extends "dashboard/academic_admin/_academic_admin_base.html" %}
+{% block title %}Students — SMS{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Students</li>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">Students</h3>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="text-muted small mb-2">Register Student</div>
+    <form method="post" class="row g-2">
+        {% csrf_token %}
+        <div class="col-md-2"><input type="text" name="username" class="form-control" placeholder="Username" required></div>
+        <div class="col-md-2"><input type="text" name="first_name" class="form-control" placeholder="First name"></div>
+        <div class="col-md-2"><input type="text" name="last_name" class="form-control" placeholder="Last name"></div>
+        <div class="col-md-2"><input type="email" name="email" class="form-control" placeholder="Email"></div>
+        <div class="col-md-2"><input type="text" name="admission_number" class="form-control" placeholder="Admission #" required></div>
+        <div class="col-md-2"><input type="date" name="admission_date" class="form-control" required></div>
+        <div class="col-md-3">
+            <select name="current_class_id" class="form-select">
+                <option value="">Class</option>
+                {% for c in classes %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3"><input type="password" name="password" class="form-control" placeholder="Password (optional — random if blank)"></div>
+        <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Register</button></div>
+    </form>
+</div>
+
+<form method="get" class="mb-3">
+    <input type="text" name="q" class="form-control" style="max-width: 300px;" placeholder="Search admission # or name" value="{{ search }}">
+</form>
+
+<div class="card sms-stat-card p-3">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr><th>Admission #</th><th>Name</th><th>Class</th><th>Stream</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for s in students %}
+            <tr>
+                <td>{{ s.admission_number }}</td>
+                <td>{{ s.user.get_full_name|default:s.user.username }}</td>
+                <td>{{ s.current_class|default:"—" }}</td>
+                <td>{{ s.current_stream|default:"—" }}</td>
+                <td><span class="badge bg-secondary">{{ s.get_status_display }}</span></td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:academic_admin_student_detail' s.pk %}">View</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6" class="text-muted">No students found.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

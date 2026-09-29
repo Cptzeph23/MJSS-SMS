@@ -1,0 +1,12 @@
+<!-- Absolute path: SMS/templates/dashboard/teacher/_teacher_base.html -->
+{% extends "base.html" %}
+
+{% block sidebar_items %}
+    <li class="nav-item"><a class="nav-link {% if active == 'overview' %}active{% endif %}" href="{% url 'dashboard:teacher_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'classes' %}active{% endif %}" href="{% url 'dashboard:teacher_classes' %}"><i class="bi bi-people me-2"></i>My Classes</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'timetable' %}active{% endif %}" href="{% url 'dashboard:teacher_timetable' %}"><i class="bi bi-calendar3 me-2"></i>Timetable</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'assignments' %}active{% endif %}" href="{% url 'dashboard:teacher_assignments' %}"><i class="bi bi-journal-check me-2"></i>Assignments</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'assessments' %}active{% endif %}" href="{% url 'dashboard:teacher_assessments' %}"><i class="bi bi-clipboard-data me-2"></i>Assessments</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'materials' %}active{% endif %}" href="{% url 'dashboard:teacher_materials' %}"><i class="bi bi-file-earmark-richtext me-2"></i>Materials</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'communication' %}active{% endif %}" href="{% url 'dashboard:teacher_communication' %}"><i class="bi bi-megaphone me-2"></i>Communication</a></li>
+{% endblock %}

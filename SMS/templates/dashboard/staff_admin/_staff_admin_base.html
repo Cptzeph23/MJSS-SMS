@@ -1,0 +1,10 @@
+<!-- Absolute path: SMS/templates/dashboard/staff_admin/_staff_admin_base.html -->
+{% extends "base.html" %}
+
+{% block sidebar_items %}
+    <li class="nav-item"><a class="nav-link {% if active == 'overview' %}active{% endif %}" href="{% url 'dashboard:staff_admin_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'staff' %}active{% endif %}" href="{% url 'dashboard:staff_admin_staff_list' %}"><i class="bi bi-people me-2"></i>Staff</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'attendance' %}active{% endif %}" href="{% url 'dashboard:staff_admin_attendance' %}"><i class="bi bi-calendar-check me-2"></i>Attendance</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'leave' %}active{% endif %}" href="{% url 'dashboard:staff_admin_leave_requests' %}"><i class="bi bi-envelope-paper me-2"></i>Leave Requests</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'workload' %}active{% endif %}" href="{% url 'dashboard:staff_admin_workload' %}"><i class="bi bi-clipboard-data me-2"></i>Workload</a></li>
+{% endblock %}

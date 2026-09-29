@@ -1,0 +1,112 @@
+<!-- Absolute path: SMS/templates/reports/transcript.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Official Transcript — {{ student.user.get_full_name|default:student.user.username }}</title>
+    <style>
+        @page { size: A4; margin: 2cm; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #222; font-size: 12px; }
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 2px solid #2f3437; padding-bottom: 12px; margin-bottom: 16px;
+        }
+        .header .logo img { max-height: 64px; }
+        .header .school-info { text-align: right; }
+        .school-info h1 { margin: 0; font-size: 18px; color: #2f3437; }
+        .school-info p { margin: 2px 0; font-size: 11px; color: #555; }
+
+        h2.title { text-align: center; color: #2f3437; letter-spacing: 1px; }
+
+        .student-meta {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px;
+            margin-bottom: 18px; font-size: 12px;
+        }
+        .student-meta div span.label { color: #666; display: block; font-size: 10px; text-transform: uppercase; }
+
+        table.entries { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        table.entries th, table.entries td {
+            border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 11px;
+        }
+        table.entries th { background-color: #eef0f1; color: #2f3437; }
+
+        .summary-row { display: flex; justify-content: space-between; margin: 16px 0; font-size: 12px; }
+        .summary-row .box { border: 1px solid #ccc; border-radius: 4px; padding: 8px 14px; text-align: center; }
+        .summary-row .box .value { font-size: 16px; font-weight: 600; color: #2f3437; }
+
+        .verification {
+            margin-top: 30px; border-top: 1px dashed #aaa; padding-top: 10px;
+            font-size: 10px; color: #666; text-align: center;
+        }
+        .verification .code { font-family: monospace; font-size: 11px; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            {% if school_logo %}<img src="{{ school_logo }}" alt="{{ school.name }} logo">{% endif %}
+        </div>
+        <div class="school-info">
+            <h1>{{ school.name }}</h1>
+            {% if school.motto %}<p>{{ school.motto }}</p>{% endif %}
+            <p>{{ school.address }}</p>
+        </div>
+    </div>
+
+    <h2 class="title">OFFICIAL ACADEMIC TRANSCRIPT</h2>
+
+    <div class="student-meta">
+        <div><span class="label">Student Name</span>{{ student.user.get_full_name|default:student.user.username }}</div>
+        <div><span class="label">Admission Number</span>{{ student.admission_number }}</div>
+        <div><span class="label">Academic Status</span>{{ transcript.get_academic_status_display }}</div>
+        <div><span class="label">Graduation Status</span>{{ transcript.get_graduation_status_display }}</div>
+        <div><span class="label">Date Issued</span>{{ transcript.generated_at|date:"Y-m-d" }}</div>
+    </div>
+
+    <table class="entries">
+        <thead>
+            <tr>
+                <th>Academic Year</th>
+                <th>Term</th>
+                <th>Subject</th>
+                <th>Score (%)</th>
+                <th>Grade</th>
+                <th>Grade Point</th>
+                <th>Credit Hours</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td>{{ entry.academic_year_label }}</td>
+                <td>{{ entry.term_label }}</td>
+                <td>{{ entry.subject_name }}</td>
+                <td>{{ entry.score }}</td>
+                <td>{{ entry.grade|default:"—" }}</td>
+                <td>{{ entry.grade_point|default:"—" }}</td>
+                <td>{{ entry.credit_hours|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7">No published results on record.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="summary-row">
+        <div class="box">
+            <div class="label">GPA (latest term)</div>
+            <div class="value">{{ transcript.gpa|default:"—" }}</div>
+        </div>
+        <div class="box">
+            <div class="label">CGPA (cumulative)</div>
+            <div class="value">{{ transcript.cgpa|default:"—" }}</div>
+        </div>
+    </div>
+
+    <div class="verification">
+        This is an official document issued by {{ school.name }}.
+        Verify authenticity using the code below.<br>
+        <span class="code">{{ transcript.verification_code }}</span>
+    </div>
+</body>
+</html>
