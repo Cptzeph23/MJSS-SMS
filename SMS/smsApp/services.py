@@ -12,6 +12,7 @@ import datetime
 from decimal import Decimal
 from typing import Any
 
+from django.db import transaction
 from django.http import HttpRequest
 
 from .models import Assessment, AuditLog, ClassSubject, LoginHistory, Staff, Student, Term, User
@@ -1409,6 +1410,60 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
 
 
 # =============================================================================
+@transaction.atomic
+def record_family_payment(*, guardian, amount: Decimal, allocations: list[tuple], payment_method: str, payment_date, received_by: User, payer_name: str = "", reference: str = "", notes: str = "", request: HttpRequest | None = None):
+    """Record one manual family payment and allocate it to child invoices."""
+    from .models import Payment, PaymentAllocation, Receipt
+    if amount <= 0:
+        raise ValueError("Payment amount must be positive.")
+    children = Student.objects.filter(studentguardian__guardian=guardian).distinct()
+    child_ids = set(children.values_list("pk", flat=True))
+    if not allocations:
+        raise ValueError("At least one child invoice allocation is required.")
+    normalized, allocated_total, seen = [], Decimal("0"), set()
+    for invoice, value in allocations:
+        value = Decimal(str(value))
+        if invoice.student_id not in child_ids:
+            raise ValueError("Every allocation must belong to this family's child.")
+        if invoice.pk in seen:
+            raise ValueError("An invoice may only appear once in the allocations.")
+        if value <= 0:
+            raise ValueError("Allocation amounts must be positive.")
+        direct = invoice.payments.filter(status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+        allocated = PaymentAllocation.objects.filter(invoice=invoice, payment__status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+        if direct + allocated + value > invoice.total_amount:
+            raise ValueError(f"Allocation exceeds the remaining balance for {invoice.invoice_number}.")
+        normalized.append((invoice, value))
+        seen.add(invoice.pk)
+        allocated_total += value
+    if allocated_total != Decimal(str(amount)):
+        raise ValueError("Payment amount must equal the sum of its allocations.")
+    payment = Payment.objects.create(invoice=None, family_guardian=guardian, amount=amount, payment_method=payment_method, payment_date=payment_date, received_by=received_by, payer_name=payer_name, gateway_reference=reference, notes=notes, status=Payment.Status.COMPLETED)
+    for invoice, value in normalized:
+        PaymentAllocation.objects.create(payment=payment, invoice=invoice, amount=value)
+        _recompute_invoice_status(invoice)
+    Receipt.objects.create(payment=payment, issued_by=received_by)
+    log_audit(actor=received_by, action=AuditLog.Action.CREATE, request=request, target_model="Payment", target_object_id=payment.pk, description=f"Recorded family payment {payment.payment_number} for {guardian}", new_value={"amount": str(amount), "method": payment_method, "allocations": [{"invoice": i.invoice_number, "amount": str(v)} for i, v in normalized]})
+    return payment
+
+
+def compute_family_account_summary(*, guardian) -> dict[str, Any]:
+    """Return family totals and one balance row per linked child."""
+    from .models import Invoice, Payment, PaymentAllocation
+    children = Student.objects.filter(studentguardian__guardian=guardian).select_related("user").distinct()
+    rows, total_billed, total_paid = [], Decimal("0"), Decimal("0")
+    for child in children:
+        invoices = Invoice.objects.filter(student=child).exclude(status=Invoice.Status.CANCELLED)
+        billed = invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+        direct = Payment.objects.filter(invoice__student=child, status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+        allocated = PaymentAllocation.objects.filter(invoice__student=child, payment__status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+        paid = direct + allocated
+        total_billed += billed
+        total_paid += paid
+        rows.append({"student": child, "total_billed": billed, "total_paid": paid, "outstanding_balance": billed - paid})
+    return {"guardian": guardian, "children": rows, "total_billed": total_billed, "total_paid": total_paid, "outstanding_balance": total_billed - total_paid}
+
+
 # Phase 13 — Library Module (spec §20)
 # =============================================================================
 

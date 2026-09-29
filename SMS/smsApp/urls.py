@@ -116,6 +116,7 @@ urlpatterns = [
         views.FinanceAdminInvoiceDetailView.as_view(), name="finance_invoice_detail",
     ),
     path("finance/refunds/", views.FinanceAdminRefundsView.as_view(), name="finance_refunds"),
+    path("finance/family-payments/", views.FinanceAdminFamilyPaymentView.as_view(), name="finance_family_payment"),
     path("staff-admin/", views.StaffAdminDashboardView.as_view(), name="staff_admin_dashboard"),
     path("staff-admin/staff/", views.StaffAdminStaffListView.as_view(), name="staff_admin_staff_list"),
     path("staff-admin/staff/create/", views.StaffAdminStaffCreateView.as_view(), name="staff_admin_staff_create"),

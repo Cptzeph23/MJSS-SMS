@@ -10,6 +10,30 @@
 {% block content %}
 <h3 class="mb-1">{{ student.user.get_full_name|default:student.user.username }}</h3>
 <div class="text-muted mb-4">{{ student.admission_number }}</div>
+<div class="alert alert-light border mb-4">
+    <h5 class="mb-3">Family Account</h5>
+    <div class="row g-3">
+        <div class="col-md-4"><div class="text-muted small">Family Obligation</div><div class="fs-5">{{ family_summary.total_billed }}</div></div>
+        <div class="col-md-4"><div class="text-muted small">Family Paid</div><div class="fs-5">{{ family_summary.total_paid }}</div></div>
+        <div class="col-md-4"><div class="text-muted small">Family Balance</div><div class="fs-5">{{ family_summary.outstanding_balance }}</div></div>
+    </div>
+</div>
+
+<h5>Children in Family Account</h5>
+<table class="table table-sm mb-4">
+    <thead><tr><th>Child</th><th>Admission #</th><th>Obligation</th><th>Paid</th><th>Balance</th></tr></thead>
+    <tbody>
+    {% for row in family_summary.children %}
+        <tr>
+            <td>{{ row.student.user.get_full_name|default:row.student.user.username }}</td>
+            <td>{{ row.student.admission_number }}</td>
+            <td>{{ row.total_billed }}</td>
+            <td>{{ row.total_paid }}</td>
+            <td>{{ row.outstanding_balance }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
 
 <div class="row g-3 mb-4">
     <div class="col-md-4">

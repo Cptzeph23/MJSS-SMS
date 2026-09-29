@@ -2161,7 +2161,15 @@ class Payment(models.Model):
         REVERSED = "REVERSED", "Reversed"
 
     payment_number = models.CharField(max_length=30, unique=True, editable=False, blank=True)
-    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="payments")
+    invoice = models.ForeignKey(
+        Invoice, on_delete=models.SET_NULL, related_name="payments",
+        blank=True, null=True,
+    )
+    family_guardian = models.ForeignKey(
+        "smsApp.Guardian", on_delete=models.SET_NULL,
+        related_name="family_payments", blank=True, null=True,
+        help_text="Set for a parent-level payment allocated across children.",
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=15, choices=Method.choices)
     gateway_reference = models.CharField(max_length=100, blank=True)
@@ -2186,12 +2194,40 @@ class Payment(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.payment_number} - {self.amount} ({self.invoice.invoice_number})"
+        target = self.invoice.invoice_number if self.invoice_id else "Family payment"
+        return f"{self.payment_number} - {self.amount} ({target})"
 
     def save(self, *args, **kwargs):
         if not self.payment_number:
             self.payment_number = _generate_unique_code("PAY")
         super().save(*args, **kwargs)
+
+
+class PaymentAllocation(models.Model):
+    """Allocation of a parent-level payment to one child's invoice."""
+
+    payment = models.ForeignKey(
+        Payment, on_delete=models.PROTECT, related_name="allocations"
+    )
+    invoice = models.ForeignKey(
+        Invoice, on_delete=models.PROTECT, related_name="payment_allocations"
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        db_table = "payment_allocations"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["payment", "invoice"], name="uniq_payment_invoice_allocation"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name="payment_allocation_amount_positive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.payment.payment_number} -> {self.invoice.invoice_number}: {self.amount}"
 
 
 class Receipt(models.Model):

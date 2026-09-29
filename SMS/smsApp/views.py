@@ -83,6 +83,7 @@ from .services import (
     compute_student_subject_completion,
     compute_staff_workload,
     compute_student_account_summary,
+    compute_family_account_summary,
     compute_weighted_average,
     correct_attendance_record,
     deactivate_staff,
@@ -103,6 +104,7 @@ from .services import (
     record_assessment_marks,
     record_login,
     record_payment,
+    record_family_payment,
     record_staff_attendance,
     send_notification,
     register_student,
@@ -1254,17 +1256,24 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         child = self.get_child_or_404(self.request, kwargs["student_id"])
 
+        from django.db.models import Q
+
+        guardian = get_object_or_404(Guardian, user=self.request.user)
         invoices = Invoice.objects.filter(student=child).order_by("-issue_date")
-        payments = Payment.objects.filter(invoice__student=child).select_related(
-            "invoice", "receipt"
-        ).order_by("-payment_date")
+        payments = Payment.objects.filter(
+            Q(invoice__student=child) | Q(family_guardian=guardian)
+        ).select_related("invoice", "receipt").prefetch_related(
+            "allocations__invoice"
+        ).distinct().order_by("-payment_date")
         account_summary = compute_student_account_summary(student=child)
+        family_summary = compute_family_account_summary(guardian=guardian)
 
         context.update({
             "student": child,
             "invoices": invoices,
             "payments": payments,
             "account_summary": account_summary,
+            "family_summary": family_summary,
         })
         return context
 
@@ -2127,6 +2136,66 @@ class FinanceAdminInvoiceDetailView(FinanceRequiredMixin, View):
         except ValueError as exc:
             return HttpResponseForbidden(str(exc))
         return redirect("dashboard:finance_invoice_detail", invoice_id=invoice.pk)
+
+
+class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
+    template_name = "dashboard/finance/family_payment.html"
+    active_nav = "family_payments"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        school = self.get_school(self.request)
+        families = []
+        if school:
+            for guardian in Guardian.objects.filter(school=school, is_active=True):
+                children = Student.objects.filter(
+                    school=school, studentguardian__guardian=guardian
+                ).distinct().select_related("user")
+                invoices = Invoice.objects.filter(
+                    school=school, student__in=children
+                ).exclude(status=Invoice.Status.CANCELLED).order_by("student_id", "issue_date")
+                if children.exists():
+                    families.append({"guardian": guardian, "children": children, "invoices": invoices})
+        context.update({
+            "school": school,
+            "families": families,
+            "payment_methods": [
+                choice for choice in Payment.Method.choices
+                if choice[0] in {
+                    Payment.Method.CASH, Payment.Method.BANK_TRANSFER,
+                    Payment.Method.MOBILE_MONEY, Payment.Method.MPESA,
+                }
+            ],
+        })
+        return context
+
+    def post(self, request):
+        school = self.get_school(request)
+        guardian = get_object_or_404(
+            Guardian, pk=request.POST.get("guardian_id"), school=school, is_active=True
+        )
+        allocations = []
+        for invoice_id in request.POST.getlist("invoice_id"):
+            raw_amount = request.POST.get(f"allocation_{invoice_id}", "").strip()
+            if not raw_amount:
+                continue
+            invoice = get_object_or_404(
+                Invoice, pk=invoice_id, school=school, student__studentguardian__guardian=guardian
+            )
+            allocations.append((invoice, Decimal(raw_amount)))
+        try:
+            record_family_payment(
+                guardian=guardian, amount=Decimal(request.POST.get("amount")),
+                allocations=allocations,
+                payment_method=request.POST.get("payment_method"),
+                payment_date=request.POST.get("payment_date") or timezone.now(),
+                received_by=request.user, payer_name=request.POST.get("payer_name", ""),
+                reference=request.POST.get("reference", ""),
+                notes=request.POST.get("notes", ""), request=request,
+            )
+        except (ValueError, TypeError) as exc:
+            return HttpResponseForbidden(str(exc))
+        return redirect("dashboard:finance_family_payment")
 
 
 class FinanceAdminRefundsView(FinanceRequiredMixin, TemplateView):
