@@ -34,6 +34,8 @@ from .validators import (
 class User(AbstractUser):
     class Role(models.TextChoices):
         SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
+        PRINCIPAL_DIRECTOR = "PRINCIPAL_DIRECTOR", "Principal/Director"
+        DEPUTY_PRINCIPAL = "DEPUTY_PRINCIPAL", "Deputy Principal"
         STAFF_ADMIN = "STAFF_ADMIN", "Staff Admin"
         ACADEMIC_ADMIN = "ACADEMIC_ADMIN", "Academic Admin"
         FINANCE_ADMIN = "FINANCE_ADMIN", "Finance Admin"

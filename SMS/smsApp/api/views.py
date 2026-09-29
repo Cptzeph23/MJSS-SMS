@@ -73,7 +73,7 @@ class MyClassSubjectsView(APIView):
             if staff is None:
                 return Response([], status=status.HTTP_200_OK)
             class_subjects = ClassSubject.objects.filter(
-                teaching_assignments__teacher=staff, teaching_assignments__is_active=True,
+                class_group__school=staff.school, teaching_assignments__teacher=staff, teaching_assignments__is_active=True,
             ).distinct().select_related("subject", "class_group")
         else:
             return Response(
@@ -102,7 +102,12 @@ class StudentViewSet(mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.
         user = self.request.user
         base = Student.objects.select_related("user", "current_class", "current_stream")
         if user.is_superuser or IsAcademicStaff().has_permission(self.request, self):
-            return base.all()
+            staff = getattr(user, "staff_profile", None)
+            if staff is not None:
+                return base.filter(school=staff.school)
+            from smsApp.models import School
+            schools = School.objects.filter(is_active=True)
+            return base.filter(school=schools.first()) if schools.count() == 1 else base.none()
         if user.role == user.Role.STUDENT:
             return base.filter(user=user)
         if user.role == user.Role.PARENT:
@@ -111,10 +116,6 @@ class StudentViewSet(mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.
 
 
 class AttendanceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    """Spec §26 'Attendance'. Same scoping pattern as StudentViewSet —
-    a student sees only their own attendance, a parent only their
-    children's, academic staff see everyone at the school."""
-
     serializer_class = AttendanceRecordSerializer
     permission_classes = [IsAuthenticated]
 
@@ -124,7 +125,12 @@ class AttendanceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             "student__user", "session__class_subject__subject", "session__class_subject__class_group",
         )
         if user.is_superuser or IsAcademicStaff().has_permission(self.request, self):
-            return base.all()
+            staff = getattr(user, "staff_profile", None)
+            if staff is not None:
+                return base.filter(session__class_subject__class_group__school=staff.school)
+            from smsApp.models import School
+            schools = School.objects.filter(is_active=True)
+            return base.filter(session__class_subject__class_group__school=schools.first()) if schools.count() == 1 else base.none()
         if user.role == user.Role.STUDENT:
             return base.filter(student__user=user)
         if user.role == user.Role.PARENT:

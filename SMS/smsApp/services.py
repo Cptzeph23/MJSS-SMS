@@ -90,6 +90,8 @@ def get_dashboard_url_for_role(user: User) -> str:
 
     mapping = {
         User.Role.SUPER_ADMIN: "dashboard:super_admin",
+        User.Role.PRINCIPAL_DIRECTOR: "dashboard:academic_admin_dashboard",
+        User.Role.DEPUTY_PRINCIPAL: "dashboard:academic_admin_dashboard",
         User.Role.STUDENT: "dashboard:student_dashboard",
         User.Role.PARENT: "dashboard:parent_dashboard",
         User.Role.TEACHER: "dashboard:teacher_dashboard",
@@ -2275,6 +2277,15 @@ def register_student(
     from django.utils.crypto import get_random_string
 
     from .models import Student
+
+    if school is None:
+        raise ValueError("A school must be selected before registering a student.")
+    if current_class is not None and current_class.school_id != school.pk:
+        raise ValueError("The selected class does not belong to the selected school.")
+    if current_stream is not None and current_stream.class_group.school_id != school.pk:
+        raise ValueError("The selected stream does not belong to the selected school.")
+    if program is not None and program.school_id != school.pk:
+        raise ValueError("The selected program does not belong to the selected school.")
 
     new_user = User.objects.create_user(
         username=username, password=password or get_random_string(16),

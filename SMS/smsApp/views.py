@@ -507,7 +507,8 @@ class SuperAdminRequiredMixin(RoleRequiredMixin):
 
 
 STAFF_ROLES = {
-    User.Role.STAFF_ADMIN, User.Role.ACADEMIC_ADMIN, User.Role.FINANCE_ADMIN,
+    User.Role.STAFF_ADMIN, User.Role.ACADEMIC_ADMIN, User.Role.PRINCIPAL_DIRECTOR,
+    User.Role.DEPUTY_PRINCIPAL, User.Role.FINANCE_ADMIN,
     User.Role.TEACHER, User.Role.EXAM_OFFICER, User.Role.CLASS_TEACHER,
     User.Role.DEPARTMENT_HEAD, User.Role.ACCOUNTANT, User.Role.LIBRARIAN,
 }
@@ -2464,7 +2465,11 @@ class MyLeaveRequestsView(LoginRequiredMixin, TemplateView):
 # =============================================================================
 
 class AcademicAdminRequiredMixin(RoleRequiredMixin):
-    allowed_roles = [User.Role.ACADEMIC_ADMIN]
+    allowed_roles = [
+        User.Role.ACADEMIC_ADMIN,
+        User.Role.PRINCIPAL_DIRECTOR,
+        User.Role.DEPUTY_PRINCIPAL,
+    ]
     active_nav = None
 
     def get_context_data(self, **kwargs):
@@ -2476,7 +2481,9 @@ class AcademicAdminRequiredMixin(RoleRequiredMixin):
         from .models import School
         if hasattr(request.user, "staff_profile"):
             return request.user.staff_profile.school
-        return None
+        # Compatibility for existing single-school legacy accounts.
+        schools = School.objects.filter(is_active=True)
+        return schools.first() if schools.count() == 1 else None
 
 
 class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
@@ -2520,6 +2527,8 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
         return context
 
     def post(self, request):
+        if request.user.role == User.Role.DEPUTY_PRINCIPAL:
+            return HttpResponseForbidden("Deputy Principals cannot register students.")
         school = self.get_school(request)
         try:
             register_student(
@@ -2531,7 +2540,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 admission_number=request.POST.get("admission_number", ""),
                 admission_date=request.POST.get("admission_date"),
                 current_class=(
-                    Class.objects.filter(pk=request.POST.get("current_class_id")).first()
+                    Class.objects.filter(pk=request.POST.get("current_class_id"), school=school).first()
                     if request.POST.get("current_class_id") else None
                 ),
                 registered_by=request.user, request=request,
@@ -2565,6 +2574,8 @@ class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):
         })
 
     def post(self, request, student_id):
+        if request.user.role == User.Role.DEPUTY_PRINCIPAL:
+            return HttpResponseForbidden("Deputy Principals cannot change student status.")
         school = self.get_school(request)
         student = get_object_or_404(Student, pk=student_id, school=school)
         try:
