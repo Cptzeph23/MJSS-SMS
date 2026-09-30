@@ -2118,7 +2118,13 @@ class FinanceAdminInvoiceDetailView(FinanceRequiredMixin, View):
         )
         return render(request, self.template_name, {
             "invoice": invoice, "active": self.active_nav,
-            "payment_methods": Payment.Method.choices,
+            "payment_methods": [
+                choice for choice in Payment.Method.choices
+                if choice[0] in {
+                    Payment.Method.CASH, Payment.Method.BANK_TRANSFER,
+                    Payment.Method.MOBILE_MONEY, Payment.Method.MPESA,
+                }
+            ],
         })
 
     def post(self, request, invoice_id):

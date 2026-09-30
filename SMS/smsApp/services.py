@@ -1754,11 +1754,27 @@ def _deliver_email(*, notification, delivery) -> None:
 
 
 def _deliver_sms(*, notification, delivery) -> None:
-    """No live SMS gateway is configured. Marks the attempt FAILED with an
-    honest reason rather than silently no-op'ing as if it succeeded."""
-    delivery.status = delivery.Status.FAILED
-    delivery.error_message = "SMS gateway not configured."
-    delivery.save(update_fields=["status", "error_message"])
+    from django.utils import timezone
+    from .sms import SMSProviderError, send_sms
+
+    try:
+        guardian = getattr(notification.recipient, "guardian_profile", None)
+        phone_number = (
+            guardian.phone_number if guardian is not None
+            else notification.recipient.phone_number
+        )
+        result = send_sms(
+            phone_number=phone_number,
+            message=f"{notification.title}: {notification.message}",
+        )
+        delivery.status = delivery.Status.SENT
+        delivery.provider_reference = result.provider_reference
+        delivery.sent_at = timezone.now()
+        delivery.save(update_fields=["status", "provider_reference", "sent_at"])
+    except (SMSProviderError, Exception) as exc:
+        delivery.status = delivery.Status.FAILED
+        delivery.error_message = str(exc)[:255]
+        delivery.save(update_fields=["status", "error_message"])
 
 
 def _deliver_push(*, notification, delivery) -> None:
@@ -2002,7 +2018,12 @@ def mark_attendance(
     'Academic Admin can... correct attendance with appropriate
     permissions' implies the teacher's window to freely re-submit ends
     once that review has happened)."""
-    from .models import AttendanceRecord, AttendanceSession
+    from .models import AttendanceRecord, AttendanceSession, Enrollment, TeachingAssignment
+
+    if term is None or not TeachingAssignment.objects.filter(
+        class_subject=class_subject, term=term, teacher=taken_by, is_active=True
+    ).exists():
+        raise ValueError("Teacher is not assigned to this class and subject for the selected term.")
 
     session, created = AttendanceSession.objects.get_or_create(
         class_subject=class_subject, date=date,
@@ -2017,15 +2038,51 @@ def mark_attendance(
         session.taken_by = taken_by
         session.save(update_fields=["taken_by"])
 
+    from .models import Notification, StudentGuardian
+
     for student_id, payload in records.items():
-        AttendanceRecord.objects.update_or_create(
+        status = payload["status"]
+        if status not in AttendanceRecord.Status.values:
+            raise ValueError(f"Invalid attendance status: {status}")
+        if not Enrollment.objects.filter(
+            student_id=student_id, class_subject=class_subject,
+            academic_year=term.academic_year, status=Enrollment.Status.ENROLLED,
+        ).exists():
+            raise ValueError("Student is not enrolled in this class and subject.")
+        record, _ = AttendanceRecord.objects.update_or_create(
             session=session, student_id=student_id,
             defaults={
-                "status": payload["status"],
+                "status": status,
                 "notes": payload.get("notes", ""),
                 "recorded_by": taken_by.user,
             },
         )
+        if status in {
+            AttendanceRecord.Status.ABSENT,
+            AttendanceRecord.Status.LATE,
+            AttendanceRecord.Status.EXCUSED,
+        }:
+            for link in StudentGuardian.objects.filter(
+                student_id=student_id, guardian__user__isnull=False
+            ).select_related("guardian__user", "student"):
+                try:
+                    send_notification(
+                        recipient=link.guardian.user,
+                        notification_type=Notification.NotificationType.ATTENDANCE,
+                        title=f"Attendance update for {link.student}",
+                        body=f"{link.student} was marked {record.get_status_display()} on {date}.",
+                        channels=["SMS"],
+                        related_model="AttendanceRecord",
+                        related_object_id=record.pk,
+                        request=request,
+                    )
+                except Exception as exc:
+                    log_audit(
+                        actor=taken_by.user, action=AuditLog.Action.OTHER,
+                        request=request, target_model="AttendanceRecord",
+                        target_object_id=record.pk,
+                        description=f"Attendance saved but parent SMS notification failed: {exc}",
+                    )
 
     log_audit(
         actor=taken_by.user, action=AuditLog.Action.CREATE if created else AuditLog.Action.UPDATE,

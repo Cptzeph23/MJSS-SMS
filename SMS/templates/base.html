@@ -157,7 +157,6 @@
                         <li><span class="dropdown-item-text text-muted small">{{ request.user.get_role_display }}</span></li>
                         <li><hr class="dropdown-divider"></li>
                         {% if request.user.is_authenticated and request.user.staff_profile %}
-                            <li><a class="dropdown-item" href="{% url 'dashboard:my_leave_requests' %}"><i class="bi bi-envelope-paper me-2"></i>My Leave Requests</a></li>
                             <li><hr class="dropdown-divider"></li>
                         {% endif %}
                         <li><a class="dropdown-item" href="{% url 'dashboard:logout' %}">Logout</a></li>

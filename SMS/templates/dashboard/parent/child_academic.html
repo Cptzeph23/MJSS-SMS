@@ -28,23 +28,6 @@
     </tbody>
 </table>
 
-<h5 class="mt-4">Assignments</h5>
-<table class="table table-sm">
-    <thead><tr><th>Title</th><th>Deadline</th><th>Status</th><th>Marks</th></tr></thead>
-    <tbody>
-        {% for row in assignment_rows %}
-        <tr>
-            <td>{{ row.assignment.title }}</td>
-            <td>{{ row.assignment.deadline }}</td>
-            <td>{% if row.submission %}{{ row.submission.get_status_display }}{% else %}Not submitted{% endif %}</td>
-            <td>{{ row.submission.marks_obtained|default:"—" }}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="text-muted">No assignments found.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
-
 <h5 class="mt-4">Report Books</h5>
 <ul class="list-group">
     {% for card in report_cards %}

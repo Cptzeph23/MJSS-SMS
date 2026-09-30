@@ -36,7 +36,7 @@
     {% if pending_tasks %}
     <table class="table table-sm align-middle mb-0">
         <thead><tr><th>Subject</th><th>Task</th><th>Reason</th><th></th></tr></thead>
-        <tbody>{% for task in pending_tasks %}<tr><td>{{ task.subject }}</td><td><span class="badge bg-secondary me-1">{{ task.category }}</span>{{ task.title }}</td><td>{{ task.reason }}</td><td class="text-end">{% if task.quiz_id %}<a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:student_quiz_attempt' task.quiz_id %}">Open task</a>{% elif task.assignment_id %}<a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:student_lms' %}">Open Learning</a>{% endif %}</td></tr>{% endfor %}</tbody>
+        <tbody>{% for task in pending_tasks %}<tr><td>{{ task.subject }}</td><td><span class="badge bg-secondary me-1">{{ task.category }}</span>{{ task.title }}</td><td>{{ task.reason }}</td><td class="text-end">{% if task.quiz_id %}<a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:student_quiz_attempt' task.quiz_id %}">Open task</a>{% elif task.assignment_id %}<span class="text-muted">Recorded assessment</span>{% endif %}</td></tr>{% endfor %}</tbody>
     </table>
     {% else %}<p class="text-success mb-0">All current-term tasks have been graded.</p>{% endif %}
 </div>
