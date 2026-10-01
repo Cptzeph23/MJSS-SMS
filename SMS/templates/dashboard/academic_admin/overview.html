@@ -1,6 +1,11 @@
 <!-- Absolute path: SMS/templates/dashboard/academic_admin/overview.html -->
 {% extends "dashboard/academic_admin/_academic_admin_base.html" %}
-{% block title %}Academic Admin Overview — SMS{% endblock %}
+{% block title %}Academic Admin Overview — SMS
+{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>.dashboard-chart{height:280px;position:relative}.dashboard-chart canvas{max-height:280px}</style>
+{% endblock %}
 
 {% block breadcrumbs %}
     <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
@@ -86,4 +91,24 @@
         <div class="text-muted">No students registered yet.</div>
     {% endif %}
 </div>
+
+<div class="row g-3 mt-4">
+    <div class="col-lg-4"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Students by status</div><div class="dashboard-chart"><canvas id="studentStatusChart"></canvas></div></div></div>
+    <div class="col-lg-4"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Students by class</div><div class="dashboard-chart"><canvas id="classStudentsChart"></canvas></div></div></div>
+    <div class="col-lg-4"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Assessment workflow</div><div class="dashboard-chart"><canvas id="assessmentWorkflowChart"></canvas></div></div></div>
+</div>
+{{ summary.status_breakdown|json_script:"academic-status-data" }}
+{{ class_chart|json_script:"academic-class-data" }}
+{{ assessment_chart|json_script:"academic-assessment-data" }}
+<script>
+(function () {
+    const status = JSON.parse(document.getElementById('academic-status-data').textContent);
+    const classes = JSON.parse(document.getElementById('academic-class-data').textContent);
+    const assessments = JSON.parse(document.getElementById('academic-assessment-data').textContent);
+    const colors = ['#6f1d32','#8c2f46','#b66b7c','#d9822b','#777777','#4a1020','#c9a0aa','#b3432f'];
+    new Chart(document.getElementById('studentStatusChart'), {type:'doughnut', data:{labels:status.map(x=>x.label), datasets:[{data:status.map(x=>x.count), backgroundColor:colors}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}}});
+    new Chart(document.getElementById('classStudentsChart'), {type:'bar', data:{labels:classes.map(x=>x.name), datasets:[{label:'Active students', data:classes.map(x=>x.student_count), backgroundColor:'#8c2f46'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
+    new Chart(document.getElementById('assessmentWorkflowChart'), {type:'bar', data:{labels:assessments.map(x=>x.label), datasets:[{label:'Assessments', data:assessments.map(x=>x.count), backgroundColor:'#d9822b'}]}, options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
+}());
+</script>
 {% endblock %}

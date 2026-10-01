@@ -1,6 +1,11 @@
 <!-- Absolute path: SMS/templates/dashboard/super_admin.html -->
 {% extends "base.html" %}
-{% block title %}Mihang'o - Super Admin{% endblock %}
+{% block title %}Mihang'o - Super Admin
+{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>.dashboard-chart{height:300px;position:relative}.dashboard-chart canvas{max-height:300px}</style>
+{% endblock %}
 
 {% block sidebar_items %}
     {% include "dashboard/super_admin/_sidebar.html" %}
@@ -99,4 +104,20 @@
         <div class="text-muted">No recent activity recorded yet.</div>
     {% endif %}
 </div>
+
+<div class="row g-3 mt-4">
+    <div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">School population</div><div class="dashboard-chart"><canvas id="schoolPopulationChart"></canvas></div></div></div>
+    <div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Fees by school</div><div class="dashboard-chart"><canvas id="schoolFinanceChart"></canvas></div></div></div>
+    <div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Attendance by school</div><div class="dashboard-chart"><canvas id="schoolAttendanceChart"></canvas></div></div></div>
+</div>
+{{ school_chart|json_script:"school-chart-data" }}
+<script>
+(function () {
+    const schools = JSON.parse(document.getElementById('school-chart-data').textContent);
+    const labels = schools.map(x=>x.name);
+    new Chart(document.getElementById('schoolPopulationChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Students',data:schools.map(x=>x.students),backgroundColor:'#8c2f46'},{label:'Staff',data:schools.map(x=>x.staff),backgroundColor:'#b66b7c'},{label:'Classes',data:schools.map(x=>x.classes),backgroundColor:'#d9822b'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+    new Chart(document.getElementById('schoolFinanceChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Collected',data:schools.map(x=>x.collected),backgroundColor:'#6f1d32'},{label:'Outstanding',data:schools.map(x=>x.outstanding),backgroundColor:'#d9822b'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}}}});
+    new Chart(document.getElementById('schoolAttendanceChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Attendance %',data:schools.map(x=>x.attendance),backgroundColor:'#4a1020'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:100}} , plugins:{legend:{display:false}}}});
+}());
+</script>
 {% endblock %}

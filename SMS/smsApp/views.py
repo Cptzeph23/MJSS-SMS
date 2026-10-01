@@ -8,7 +8,7 @@ from django.contrib.auth.views import LoginView as DjangoLoginView
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -298,6 +298,18 @@ class SuperAdminDashboardView(RoleRequiredMixin, TemplateView):
                 "schools": schools,
                 "financial_summary": financial_summary,
                 "attendance_summary": attendance_summary,
+                "school_chart": [
+                    {
+                        "name": school.name,
+                        "students": Student.objects.filter(school=school, is_active=True).count(),
+                        "staff": Staff.objects.filter(school=school, is_active=True).count(),
+                        "classes": Class.objects.filter(school=school, is_active=True).count(),
+                        "collected": float(financial_summaries[index]["total_collected"]),
+                        "outstanding": float(financial_summaries[index]["outstanding_balance"]),
+                        "attendance": attendance_summaries[index]["attendance_rate_percent"] or 0,
+                    }
+                    for index, school in enumerate(schools)
+                ],
                 "recent_audit_logs": AuditLog.objects.select_related("actor")
                 .order_by("-created_at")[:10],
             }
@@ -593,7 +605,7 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
         users = User.objects.all().order_by("-created_at")
         search = self.request.GET.get("q", "").strip()
         if search:
-            from django.db.models import Q
+            from django.db.models import Count, Q
             users = users.filter(Q(username__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(email__icontains=search))
         context.update({"users": users, "search": search, "roles": ACTIVE_ROLE_CHOICES, "schools": School.objects.all()})
         return context
@@ -721,7 +733,7 @@ class SuperAdminAuditLogsView(SuperAdminRequiredMixin, TemplateView):
         search = self.request.GET.get("q", "").strip()
         action = self.request.GET.get("action", "").strip()
         if search:
-            from django.db.models import Q
+            from django.db.models import Count, Q
             logs = logs.filter(Q(description__icontains=search) | Q(target_model__icontains=search) | Q(target_object_id__icontains=search) | Q(actor__username__icontains=search))
         if action:
             logs = logs.filter(action=action)
@@ -1107,7 +1119,7 @@ class StudentCommunicationView(StudentRequiredMixin, TemplateView):
 
 
 def models_q_student_audience():
-    from django.db.models import Q
+    from django.db.models import Count, Q
 
     return Q(audience=Announcement.Audience.ALL) | Q(audience=Announcement.Audience.STUDENTS)
 
@@ -1296,7 +1308,7 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         child = self.get_child_or_404(self.request, kwargs["student_id"])
 
-        from django.db.models import Q
+        from django.db.models import Count, Q
 
         guardian = get_object_or_404(Guardian, user=self.request.user)
         invoices = Invoice.objects.filter(student=child).order_by("-issue_date")
@@ -1367,7 +1379,7 @@ class ParentCommunicationView(ParentRequiredMixin, TemplateView):
 
 
 def _parent_audience_q():
-    from django.db.models import Q
+    from django.db.models import Count, Q
     return Q(audience=Announcement.Audience.ALL) | Q(audience=Announcement.Audience.PARENTS)
 
 
@@ -1960,7 +1972,7 @@ class TeacherCommunicationView(TeacherRequiredMixin, TemplateView):
 
 
 def _teacher_audience_q():
-    from django.db.models import Q
+    from django.db.models import Count, Q
     return (
         Q(audience=Announcement.Audience.ALL)
         | Q(audience=Announcement.Audience.TEACHERS)
@@ -2371,7 +2383,7 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
 
         search = self.request.GET.get("q", "").strip()
         if search:
-            from django.db.models import Q
+            from django.db.models import Count, Q
             staff_qs = staff_qs.filter(
                 Q(staff_id__icontains=search) | Q(user__first_name__icontains=search)
                 | Q(user__last_name__icontains=search)
@@ -2782,7 +2794,29 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
         summary = compute_school_academic_summary(school=school) if school else {}
-        context.update({"school": school, "summary": summary})
+        attendance = compute_school_attendance_summary(school=school) if school else {}
+        class_rows = []
+        assessment_rows = []
+        if school:
+            class_rows = list(
+                Class.objects.filter(school=school, is_active=True)
+                .annotate(student_count=Count("students", filter=Q(students__is_active=True)))
+                .order_by("level_order", "name")
+                .values("name", "student_count")
+            )
+            assessment_rows = [
+                {"label": label, "count": Assessment.objects.filter(
+                    class_subject__class_group__school=school, workflow_status=code
+                ).count()}
+                for code, label in Assessment.WorkflowStatus.choices
+            ]
+        context.update({
+            "school": school,
+            "summary": summary,
+            "attendance_summary": attendance,
+            "class_chart": class_rows,
+            "assessment_chart": assessment_rows,
+        })
         return context
 
 
@@ -2802,7 +2836,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
 
         search = self.request.GET.get("q", "").strip()
         if search:
-            from django.db.models import Q
+            from django.db.models import Count, Q
             students_qs = students_qs.filter(
                 Q(admission_number__icontains=search) | Q(user__first_name__icontains=search)
                 | Q(user__last_name__icontains=search)
