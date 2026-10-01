@@ -43,8 +43,10 @@ from .models import (
     Department,
     Discussion,
     Enrollment,
+    FeeCategory,
     FeeConcession,
     FeeStructure,
+    FeeStructureItem,
     Guardian,
     Invoice,
     LeaveRequest,
@@ -106,6 +108,7 @@ from .services import (
     record_login,
     record_payment,
     record_family_payment,
+    assign_fee_structure_to_class,
     record_staff_attendance,
     send_notification,
     register_student,
@@ -2074,6 +2077,72 @@ class FinanceAdminDashboardView(FinanceRequiredMixin, TemplateView):
         return context
 
 
+class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
+    """Create class fee structures and issue the matching student invoices."""
+
+    template_name = "dashboard/finance/fee_structures.html"
+    active_nav = "fee_structures"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        school = self.get_school(self.request)
+        structures = (
+            FeeStructure.objects.filter(school=school)
+            .select_related("academic_year", "term", "class_group")
+            .prefetch_related("items__category", "invoices")
+            .order_by("-created_at")
+            if school else FeeStructure.objects.none()
+        )
+        context.update({
+            "school": school,
+            "structures": structures,
+            "academic_years": AcademicYear.objects.filter(school=school) if school else [],
+            "terms": Term.objects.filter(academic_year__school=school) if school else [],
+            "classes": Class.objects.filter(school=school, is_active=True).select_related("program") if school else [],
+            "categories": FeeCategory.objects.filter(school=school, is_active=True) if school else [],
+        })
+        return context
+
+    def post(self, request):
+        school = self.get_school(request)
+        academic_year = get_object_or_404(
+            AcademicYear, pk=request.POST.get("academic_year_id"), school=school
+        )
+        term = get_object_or_404(
+            Term, pk=request.POST.get("term_id"), academic_year=academic_year
+        )
+        class_group = get_object_or_404(
+            Class, pk=request.POST.get("class_id"), school=school, is_active=True
+        )
+        category = get_object_or_404(
+            FeeCategory, pk=request.POST.get("category_id"), school=school, is_active=True
+        )
+        try:
+            amount = Decimal(request.POST.get("amount", "0"))
+            due_date = datetime.date.fromisoformat(request.POST.get("due_date", ""))
+            if amount <= 0:
+                raise ValueError("Fee amount must be greater than zero.")
+            structure = FeeStructure.objects.create(
+                school=school,
+                academic_year=academic_year,
+                term=term,
+                class_group=class_group,
+                name=request.POST.get("name", "").strip() or f"{class_group.name} Fees",
+            )
+            FeeStructureItem.objects.create(
+                structure=structure, category=category, amount=amount
+            )
+            invoices = assign_fee_structure_to_class(
+                fee_structure=structure,
+                class_group=class_group,
+                due_date=due_date,
+                issued_by=request.user,
+                request=request,
+            )
+            return redirect("dashboard:finance_fee_structures")
+        except (ValueError, TypeError) as exc:
+            return HttpResponseForbidden(str(exc))
+
 class FinanceAdminInvoicesView(FinanceRequiredMixin, TemplateView):
     """Spec §19 'Invoices'. List + generate-invoice action, reusing
     services.generate_invoice_for_student() (Phase 12, already tested)."""
@@ -2168,15 +2237,25 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
         school = self.get_school(self.request)
         families = []
         if school:
-            for guardian in Guardian.objects.filter(school=school, is_active=True):
+            for guardian in Guardian.objects.filter(school=school, is_active=True).order_by("last_name", "first_name"):
                 children = Student.objects.filter(
                     school=school, studentguardian__guardian=guardian
                 ).distinct().select_related("user")
+                summary = compute_family_account_summary(guardian=guardian)
                 invoices = Invoice.objects.filter(
                     school=school, student__in=children
-                ).exclude(status=Invoice.Status.CANCELLED).order_by("student_id", "issue_date")
-                if children.exists():
-                    families.append({"guardian": guardian, "children": children, "invoices": invoices})
+                ).exclude(status=Invoice.Status.CANCELLED).select_related(
+                    "student__user"
+                ).order_by("student_id", "issue_date")
+                families.append({
+                    "guardian": guardian,
+                    "children": children,
+                    "child_balances": summary["children"],
+                    "invoices": invoices,
+                    "total_billed": summary["total_billed"],
+                    "total_paid": summary["total_paid"],
+                    "outstanding_balance": summary["outstanding_balance"],
+                })
         context.update({
             "school": school,
             "families": families,

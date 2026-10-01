@@ -1,0 +1,48 @@
+{% extends "dashboard/finance/_finance_base.html" %}
+{% block title %}Fee Structures - SMS{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
+<li class="breadcrumb-item active">Fee Structures</li>
+{% endblock %}
+{% block content %}
+<h3 class="mb-4">Class Fee Structures</h3>
+<p class="text-muted">Create a fee structure for a class. Active students currently assigned to that class will automatically receive one invoice and balance for the selected term.</p>
+
+<div class="card sms-stat-card p-4 mb-4">
+    <h5>Create and assign fee structure</h5>
+    <form method="post" class="row g-3">
+        {% csrf_token %}
+        <div class="col-md-4"><label class="form-label">Structure name</label><input name="name" class="form-control" placeholder="Grade 1 Term 1 Fees" required></div>
+        <div class="col-md-4"><label class="form-label">Academic year</label><select name="academic_year_id" class="form-select" required><option value="">Select year</option>{% for year in academic_years %}<option value="{{ year.pk }}">{{ year.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label">Term</label><select name="term_id" class="form-select" required><option value="">Select term</option>{% for term in terms %}<option value="{{ term.pk }}">{{ term }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label">Class</label><select name="class_id" class="form-select" required><option value="">Select class</option>{% for class_group in classes %}<option value="{{ class_group.pk }}">{{ class_group.name }} - {{ class_group.program.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label">Fee category</label><select name="category_id" class="form-select" required><option value="">Select category</option>{% for category in categories %}<option value="{{ category.pk }}">{{ category.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label">Amount</label><input name="amount" type="number" step="0.01" min="0.01" class="form-control" required></div>
+        <div class="col-md-2"><label class="form-label">Due date</label><input name="due_date" type="date" class="form-control" required></div>
+        <div class="col-12"><button class="btn btn-primary">Create and assign</button></div>
+    </form>
+    {% if not categories %}<div class="form-text text-danger mt-2">Create at least one active fee category before creating a structure.</div>{% endif %}
+</div>
+
+<div class="card sms-stat-card p-3">
+    <h5>Existing structures</h5>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Name</th><th>Class</th><th>Year / Term</th><th>Amount</th><th>Invoices</th></tr></thead>
+            <tbody>
+            {% for structure in structures %}
+                <tr>
+                    <td>{{ structure.name }}</td>
+                    <td>{{ structure.class_group.name|default:"School-wide" }}</td>
+                    <td>{{ structure.academic_year.name }} / {{ structure.term.name }}</td>
+                    <td>{% for item in structure.items.all %}{{ item.amount }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                    <td>{{ structure.invoices.count }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5" class="text-muted">No fee structures have been created.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

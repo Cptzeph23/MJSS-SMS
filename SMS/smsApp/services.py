@@ -1170,6 +1170,41 @@ def generate_invoice_for_student(
     return invoice
 
 
+@transaction.atomic
+def assign_fee_structure_to_class(*, fee_structure, class_group, due_date, issued_by, request=None):
+    """Issue one invoice per active student currently assigned to a class.
+
+    Existing invoices for the same student and fee structure are preserved so
+    retrying the finance action is idempotent and cannot duplicate balances.
+    """
+    from .models import Invoice, Student
+
+    if fee_structure.school_id != class_group.school_id:
+        raise ValueError("The fee structure and class must belong to the same school.")
+    if fee_structure.class_group_id != class_group.pk:
+        raise ValueError("This fee structure is not assigned to the selected class.")
+
+    created = []
+    students = Student.objects.filter(
+        school=class_group.school, current_class=class_group, is_active=True
+    ).select_related("school")
+    for student in students:
+        if Invoice.objects.filter(
+            student=student, fee_structure=fee_structure
+        ).exclude(status=Invoice.Status.CANCELLED).exists():
+            continue
+        created.append(generate_invoice_for_student(
+            student=student,
+            fee_structure=fee_structure,
+            academic_year=fee_structure.academic_year,
+            term=fee_structure.term,
+            issued_by=issued_by,
+            due_date=due_date,
+            request=request,
+        ))
+    return created
+
+
 def _term_matches_q(term):
     """Helper: a concession applies if it's for this exact term, OR it has
     no term set (meaning it applies to the whole academic year)."""

@@ -111,6 +111,7 @@ urlpatterns = [
     ),
     path("finance/", views.FinanceAdminDashboardView.as_view(), name="finance_dashboard"),
     path("finance/invoices/", views.FinanceAdminInvoicesView.as_view(), name="finance_invoices"),
+    path("finance/fee-structures/", views.FinanceAdminFeeStructuresView.as_view(), name="finance_fee_structures"),
     path(
         "finance/invoices/<int:invoice_id>/",
         views.FinanceAdminInvoiceDetailView.as_view(), name="finance_invoice_detail",
