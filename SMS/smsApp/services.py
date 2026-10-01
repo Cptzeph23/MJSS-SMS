@@ -872,6 +872,24 @@ def generate_transcript(
     return transcript
 
 
+def generate_fee_structure_pdf(*, structure, student=None, generated_by=None, request=None) -> bytes:
+    """Render a branded annual fee schedule, optionally personalized with extras."""
+    from django.template.loader import render_to_string
+    from weasyprint import HTML
+    school = structure.school
+    items = list(structure.items.select_related("category"))
+    extras = []
+    if student is not None and student.takes_coding_robotics:
+        extras.extend([row for row in items if "coding" in row.display_particulars.lower() or "robotic" in row.display_particulars.lower()])
+    if student is not None and student.transport_option != "NONE":
+        for option in structure.transport_options.all():
+            if not student.transport_route or option.route_name.lower() == student.transport_route.lower():
+                amount = option.two_way_amount if student.transport_option == "TWO_WAY" else option.one_way_amount
+                extras.append({"particulars": f"Transport - {option.route_name} ({student.get_transport_option_display()}, {student.get_transport_period_display()})", "term_1_amount": amount, "term_2_amount": amount, "term_3_amount": amount})
+    html = render_to_string("reports/fee_structure.html", {"school": school, "school_logo": _school_logo_data_uri(school), "structure": structure, "items": items, "extras": extras, "student": student})
+    return HTML(string=html).write_pdf()
+
+
 def verify_transcript(verification_code) -> dict[str, Any]:
     """Spec §16 'Generate secure PDF documents' — the verification half of
     that: given the UUID printed on an issued transcript, confirm it's
@@ -2415,6 +2433,7 @@ def register_student(
     current_class=None,
     current_stream=None,
     program=None,
+    transport_option="NONE", transport_period="NONE", transport_route="", takes_coding_robotics=False,
     registered_by: User,
     request: HttpRequest | None = None,
 ):
@@ -2443,6 +2462,8 @@ def register_student(
         user=new_user, school=school, admission_number=admission_number,
         admission_date=admission_date, current_class=current_class,
         current_stream=current_stream, program=program,
+        transport_option=transport_option, transport_period=transport_period,
+        transport_route=transport_route, takes_coding_robotics=takes_coding_robotics,
     )
     log_audit(
         actor=registered_by, action=AuditLog.Action.CREATE, request=request,

@@ -489,6 +489,10 @@ class Student(models.Model):
     address = models.TextField(blank=True)
     blood_group = models.CharField(max_length=5, blank=True)
     medical_notes = models.TextField(blank=True)
+    transport_option = models.CharField(max_length=10, choices=[("NONE", "No transport"), ("ONE_WAY", "One way"), ("TWO_WAY", "Two way")], default="NONE", blank=True)
+    transport_period = models.CharField(max_length=10, choices=[("NONE", "Not applicable"), ("MORNING", "Morning"), ("EVENING", "Evening"), ("BOTH", "Morning and evening")], default="NONE", blank=True)
+    transport_route = models.CharField(max_length=150, blank=True)
+    takes_coding_robotics = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1998,7 +2002,10 @@ class FeeStructure(models.Model):
     program = models.ForeignKey(
         Program, on_delete=models.SET_NULL, related_name="fee_structures", blank=True, null=True
     )
+    class_groups = models.ManyToManyField(Class, related_name="grouped_fee_structures", blank=True)
     name = models.CharField(max_length=150)
+    paybill_number = models.CharField(max_length=30, blank=True)
+    account_number = models.CharField(max_length=50, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -2017,7 +2024,11 @@ class FeeStructureItem(models.Model):
     category = models.ForeignKey(
         FeeCategory, on_delete=models.PROTECT, related_name="structure_items"
     )
+    particulars = models.CharField(max_length=150, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+    term_1_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
+    term_2_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
+    term_3_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
     is_mandatory = models.BooleanField(default=True)
 
     class Meta:
@@ -2032,6 +2043,21 @@ class FeeStructureItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.category.name} - {self.amount} ({self.structure.name})"
+
+    @property
+    def display_particulars(self):
+        return self.particulars or self.category.name
+
+
+class FeeStructureTransport(models.Model):
+    structure = models.ForeignKey(FeeStructure, on_delete=models.CASCADE, related_name="transport_options")
+    route_name = models.CharField(max_length=150)
+    one_way_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
+    two_way_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
+
+    class Meta:
+        db_table = "fee_structure_transport"
+        ordering = ["route_name"]
 
 
 class FeeConcession(models.Model):

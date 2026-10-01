@@ -1,48 +1,59 @@
 {% extends "dashboard/finance/_finance_base.html" %}
 {% block title %}Fee Structures - SMS{% endblock %}
-{% block breadcrumbs %}
-<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
-<li class="breadcrumb-item active">Fee Structures</li>
-{% endblock %}
 {% block content %}
-<h3 class="mb-4">Class Fee Structures</h3>
-<p class="text-muted">Create a fee structure for a class. Active students currently assigned to that class will automatically receive one invoice and balance for the selected term.</p>
-
+<h3 class="mb-4">Annual Fee Structures</h3>
 <div class="card sms-stat-card p-4 mb-4">
-    <h5>Create and assign fee structure</h5>
-    <form method="post" class="row g-3">
-        {% csrf_token %}
-        <div class="col-md-4"><label class="form-label">Structure name</label><input name="name" class="form-control" placeholder="Grade 1 Term 1 Fees" required></div>
-        <div class="col-md-4"><label class="form-label">Academic year</label><select name="academic_year_id" class="form-select" required><option value="">Select year</option>{% for year in academic_years %}<option value="{{ year.pk }}">{{ year.name }}</option>{% endfor %}</select></div>
-        <div class="col-md-4"><label class="form-label">Term</label><select name="term_id" class="form-select" required><option value="">Select term</option>{% for term in terms %}<option value="{{ term.pk }}">{{ term }}</option>{% endfor %}</select></div>
-        <div class="col-md-4"><label class="form-label">Class</label><select name="class_id" class="form-select" required><option value="">Select class</option>{% for class_group in classes %}<option value="{{ class_group.pk }}">{{ class_group.name }} - {{ class_group.program.name }}</option>{% endfor %}</select></div>
-        <div class="col-md-4"><label class="form-label">Fee category</label><select name="category_id" class="form-select" required><option value="">Select category</option>{% for category in categories %}<option value="{{ category.pk }}">{{ category.name }}</option>{% endfor %}</select></div>
-        <div class="col-md-2"><label class="form-label">Amount</label><input name="amount" type="number" step="0.01" min="0.01" class="form-control" required></div>
-        <div class="col-md-2"><label class="form-label">Due date</label><input name="due_date" type="date" class="form-control" required></div>
-        <div class="col-12"><button class="btn btn-primary">Create and assign</button></div>
-    </form>
-    {% if not categories %}<div class="form-text text-danger mt-2">Create at least one active fee category before creating a structure.</div>{% endif %}
-</div>
-
-<div class="card sms-stat-card p-3">
-    <h5>Existing structures</h5>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Name</th><th>Class</th><th>Year / Term</th><th>Amount</th><th>Invoices</th></tr></thead>
-            <tbody>
-            {% for structure in structures %}
-                <tr>
-                    <td>{{ structure.name }}</td>
-                    <td>{{ structure.class_group.name|default:"School-wide" }}</td>
-                    <td>{{ structure.academic_year.name }} / {{ structure.term.name }}</td>
-                    <td>{% for item in structure.items.all %}{{ item.amount }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
-                    <td>{{ structure.invoices.count }}</td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="5" class="text-muted">No fee structures have been created.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
+<h5>Create fee structure</h5>
+<p class="text-muted">Add only particulars charged in a term. Select one or more classes; Grades 7–9 can be combined.</p>
+<form method="post" class="row g-3">
+{% csrf_token %}
+<div class="col-md-4"><label class="form-label">Heading</label><input name="name" class="form-control" placeholder="Fee Structure - CBE (Grade 7-9)" required></div>
+<div class="col-md-3"><label class="form-label">Academic year</label><select name="academic_year_id" class="form-select" required><option value="">Select year</option>{% for y in academic_years %}<option value="{{ y.pk }}">{{ y.name }}</option>{% endfor %}</select></div>
+<div class="col-md-5">
+    <label class="form-label">Classes covered</label>
+    <input id="class-search" type="search" class="form-control mb-2" placeholder="Type to search classes, e.g. Grade 7">
+    <div id="class-options" class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+        {% for c in classes %}<label class="class-option d-block mb-1" data-class-name="{{ c.name|lower }} {{ c.program.name|lower }}"><input type="checkbox" name="class_ids" value="{{ c.pk }}" class="form-check-input me-2">{{ c.name }} - {{ c.program.name }}</label>{% empty %}<span class="text-muted">No active classes found.</span>{% endfor %}
     </div>
+    <small class="text-muted">Tick one or more classes. Use the search box to filter.</small>
 </div>
+<div class="col-md-3"><label class="form-label">M-PESA Paybill</label><input name="paybill_number" class="form-control"></div>
+<div class="col-md-3"><label class="form-label">Account No.</label><input name="account_number" class="form-control"></div>
+
+<div class="col-12"><h6>Main particulars</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Particular</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th></th></tr></thead><tbody id="particular-rows">
+{% for p in default_particulars %}<tr class="particular-row"><td><input name="particulars" value="{{ p }}" class="form-control"></td><td><input name="term_1_amount" type="number" min="0" step="0.01" class="form-control"></td><td><input name="term_2_amount" type="number" min="0" step="0.01" class="form-control"></td><td><input name="term_3_amount" type="number" min="0" step="0.01" class="form-control"></td><td><button type="button" class="btn btn-sm btn-outline-danger remove-particular" title="Remove">&times;</button></td></tr>{% endfor %}
+</tbody></table></div><button type="button" id="add-particular" class="btn btn-sm btn-outline-secondary mt-2">+ Add another particular</button></div>
+
+<div class="col-12"><h6>Transport routes</h6><div id="transport-rows"><div class="row g-2 transport-row mb-2"><div class="col-md-4"><input name="route_name" class="form-control" placeholder="Route name"></div><div class="col-md-3"><input name="one_way_amount" type="number" min="0" step="0.01" class="form-control" placeholder="One-way cost"></div><div class="col-md-3"><input name="two_way_amount" type="number" min="0" step="0.01" class="form-control" placeholder="Two-way cost"></div><div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-transport">Remove</button></div></div></div><button type="button" id="add-transport" class="btn btn-sm btn-outline-secondary">+ Add another route</button></div>
+<div class="col-12"><button class="btn btn-primary">Save fee structure</button></div>
+</form></div>
+<div class="card sms-stat-card p-3"><h5>Existing structures</h5><table class="table table-hover"><thead><tr><th>Name</th><th>Classes</th><th>Year</th><th>Payment</th><th></th></tr></thead><tbody>{% for s in structures %}<tr><td>{{ s.name }}</td><td>{% for c in s.class_groups.all %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</td><td>{{ s.academic_year.name }}</td><td>{{ s.paybill_number }} / {{ s.account_number }}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:finance_fee_structure_pdf' s.pk %}">PDF</a></td></tr>{% empty %}<tr><td colspan="5">No fee structures have been created.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const particularRows = document.getElementById("particular-rows");
+    document.getElementById("add-particular").addEventListener("click", function () {
+        const row = particularRows.querySelector(".particular-row").cloneNode(true);
+        row.querySelectorAll("input").forEach(input => { input.value = ""; });
+        particularRows.appendChild(row);
+    });
+    particularRows.addEventListener("click", function (event) {
+        if (event.target.classList.contains("remove-particular") && particularRows.querySelectorAll(".particular-row").length > 1) event.target.closest(".particular-row").remove();
+    });
+    const transportRows = document.getElementById("transport-rows");
+    document.getElementById("add-transport").addEventListener("click", function () {
+        const row = transportRows.querySelector(".transport-row").cloneNode(true);
+        row.querySelectorAll("input").forEach(input => { input.value = ""; });
+        transportRows.appendChild(row);
+    });
+    transportRows.addEventListener("click", function (event) {
+        if (event.target.classList.contains("remove-transport") && transportRows.querySelectorAll(".transport-row").length > 1) event.target.closest(".transport-row").remove();
+    });
+    document.getElementById("class-search").addEventListener("input", function () {
+        const query = this.value.toLowerCase().trim();
+        document.querySelectorAll(".class-option").forEach(option => { option.style.display = option.dataset.className.includes(query) ? "block" : "none"; });
+    });
+});
+</script>
 {% endblock %}

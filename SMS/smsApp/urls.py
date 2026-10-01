@@ -63,6 +63,7 @@ urlpatterns = [
         "parent/children/<int:student_id>/finance/",
         views.ParentChildFinanceView.as_view(), name="parent_child_finance",
     ),
+    path("parent/children/<int:student_id>/fee-structures/<int:structure_id>/pdf/", views.ParentFeeStructurePDFView.as_view(), name="parent_fee_structure_pdf"),
     path(
         "parent/communication/", views.ParentCommunicationView.as_view(),
         name="parent_communication",
@@ -112,6 +113,7 @@ urlpatterns = [
     path("finance/", views.FinanceAdminDashboardView.as_view(), name="finance_dashboard"),
     path("finance/invoices/", views.FinanceAdminInvoicesView.as_view(), name="finance_invoices"),
     path("finance/fee-structures/", views.FinanceAdminFeeStructuresView.as_view(), name="finance_fee_structures"),
+    path("finance/fee-structures/<int:structure_id>/pdf/", views.FinanceFeeStructurePDFView.as_view(), name="finance_fee_structure_pdf"),
     path(
         "finance/invoices/<int:invoice_id>/",
         views.FinanceAdminInvoiceDetailView.as_view(), name="finance_invoice_detail",

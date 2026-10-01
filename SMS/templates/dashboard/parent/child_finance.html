@@ -56,6 +56,8 @@
     </div>
 </div>
 
+<h5>Fee structures</h5><div class="list-group mb-4">{% for structure in fee_structures %}<a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'dashboard:parent_fee_structure_pdf' student.pk structure.pk %}"><span>{{ structure.name }} — {{ structure.academic_year.name }}</span><span>View PDF</span></a>{% empty %}<div class="text-muted">No fee structure published for this class.</div>{% endfor %}</div>
+
 <h5>Invoices</h5>
 <table class="table table-sm">
     <thead><tr><th>Invoice #</th><th>Term</th><th>Amount</th><th>Status</th><th>Due</th></tr></thead>

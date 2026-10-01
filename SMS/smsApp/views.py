@@ -47,6 +47,7 @@ from .models import (
     FeeConcession,
     FeeStructure,
     FeeStructureItem,
+    FeeStructureTransport,
     Guardian,
     Invoice,
     LeaveRequest,
@@ -1285,6 +1286,7 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
         ).distinct().order_by("-payment_date")
         account_summary = compute_student_account_summary(student=child)
         family_summary = compute_family_account_summary(guardian=guardian)
+        fee_structures = FeeStructure.objects.filter(school=child.school, academic_year__is_current=True, is_active=True).filter(class_groups=child.current_class).prefetch_related("items__category", "transport_options").distinct()
 
         context.update({
             "student": child,
@@ -1292,8 +1294,22 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
             "payments": payments,
             "account_summary": account_summary,
             "family_summary": family_summary,
+            "fee_structures": fee_structures,
         })
         return context
+
+
+class ParentFeeStructurePDFView(ParentRequiredMixin, View):
+    def get(self, request, student_id, structure_id):
+        child = self.get_child_or_404(request, student_id)
+        structure = get_object_or_404(FeeStructure, pk=structure_id, school=child.school, is_active=True)
+        if not structure.class_groups.filter(pk=child.current_class_id).exists():
+            raise Http404("Fee structure not found.")
+        from .services import generate_fee_structure_pdf
+        pdf = generate_fee_structure_pdf(structure=structure, student=child, generated_by=request.user, request=request)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="fee_structure_{structure.academic_year.name}_{child.admission_number}.pdf"'
+        return response
 
 
 class ParentCommunicationView(ParentRequiredMixin, TemplateView):
@@ -2078,70 +2094,75 @@ class FinanceAdminDashboardView(FinanceRequiredMixin, TemplateView):
 
 
 class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
-    """Create class fee structures and issue the matching student invoices."""
-
     template_name = "dashboard/finance/fee_structures.html"
     active_nav = "fee_structures"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
-        structures = (
-            FeeStructure.objects.filter(school=school)
+        structures = (FeeStructure.objects.filter(school=school)
             .select_related("academic_year", "term", "class_group")
-            .prefetch_related("items__category", "invoices")
-            .order_by("-created_at")
-            if school else FeeStructure.objects.none()
-        )
+            .prefetch_related("items__category", "class_groups", "transport_options", "invoices")
+            .order_by("-created_at") if school else FeeStructure.objects.none())
         context.update({
-            "school": school,
-            "structures": structures,
+            "school": school, "structures": structures,
             "academic_years": AcademicYear.objects.filter(school=school) if school else [],
             "terms": Term.objects.filter(academic_year__school=school) if school else [],
             "classes": Class.objects.filter(school=school, is_active=True).select_related("program") if school else [],
             "categories": FeeCategory.objects.filter(school=school, is_active=True) if school else [],
+            "default_particulars": ["Admission", "Student ID", "Tuition", "Meals", "Caution", "Activity fee", "Medical fee", "Coding and Robotics"],
         })
         return context
 
     def post(self, request):
         school = self.get_school(request)
-        academic_year = get_object_or_404(
-            AcademicYear, pk=request.POST.get("academic_year_id"), school=school
-        )
-        term = get_object_or_404(
-            Term, pk=request.POST.get("term_id"), academic_year=academic_year
-        )
-        class_group = get_object_or_404(
-            Class, pk=request.POST.get("class_id"), school=school, is_active=True
-        )
-        category = get_object_or_404(
-            FeeCategory, pk=request.POST.get("category_id"), school=school, is_active=True
-        )
+        academic_year = get_object_or_404(AcademicYear, pk=request.POST.get("academic_year_id"), school=school)
+        class_ids = request.POST.getlist("class_ids") or ([request.POST.get("class_id")] if request.POST.get("class_id") else [])
+        classes = list(Class.objects.filter(pk__in=class_ids, school=school, is_active=True))
+        if not classes:
+            return HttpResponseForbidden("Select at least one class.")
+        category, _ = FeeCategory.objects.get_or_create(school=school, code="GENERAL", defaults={"name": "General fees"})
         try:
-            amount = Decimal(request.POST.get("amount", "0"))
-            due_date = datetime.date.fromisoformat(request.POST.get("due_date", ""))
-            if amount <= 0:
-                raise ValueError("Fee amount must be greater than zero.")
+            legacy_term = get_object_or_404(Term, pk=request.POST.get("term_id"), academic_year=academic_year) if request.POST.get("term_id") else None
             structure = FeeStructure.objects.create(
-                school=school,
-                academic_year=academic_year,
-                term=term,
-                class_group=class_group,
-                name=request.POST.get("name", "").strip() or f"{class_group.name} Fees",
+                school=school, academic_year=academic_year, term=legacy_term, class_group=classes[0],
+                name=request.POST.get("name", "").strip() or f"Fee Structure - {academic_year.name}",
+                paybill_number=request.POST.get("paybill_number", "").strip(),
+                account_number=request.POST.get("account_number", "").strip(),
             )
-            FeeStructureItem.objects.create(
-                structure=structure, category=category, amount=amount
-            )
-            invoices = assign_fee_structure_to_class(
-                fee_structure=structure,
-                class_group=class_group,
-                due_date=due_date,
-                issued_by=request.user,
-                request=request,
-            )
+            structure.class_groups.set(classes)
+            if request.POST.get("category_id") and request.POST.get("amount"):
+                old_category = get_object_or_404(FeeCategory, pk=request.POST.get("category_id"), school=school, is_active=True)
+                old_amount = Decimal(request.POST.get("amount"))
+                FeeStructureItem.objects.create(structure=structure, category=old_category, particulars=old_category.name, amount=old_amount)
+            rows = zip(request.POST.getlist("particulars"), request.POST.getlist("term_1_amount"), request.POST.getlist("term_2_amount"), request.POST.getlist("term_3_amount"), strict=False)
+            for particulars, t1, t2, t3 in rows:
+                particulars = particulars.strip()
+                if not particulars or not any((t1, t2, t3)):
+                    continue
+                vals = [Decimal(v or "0") for v in (t1, t2, t3)]
+                row_category, _ = FeeCategory.objects.get_or_create(school=school, code=("P_" + "_".join(particulars.upper().split()))[:20], defaults={"name": particulars})
+                FeeStructureItem.objects.create(structure=structure, category=row_category, particulars=particulars, amount=sum(vals), term_1_amount=vals[0], term_2_amount=vals[1], term_3_amount=vals[2], is_mandatory=True)
+            for route, one, two in zip(request.POST.getlist("route_name"), request.POST.getlist("one_way_amount"), request.POST.getlist("two_way_amount"), strict=False):
+                if route.strip() and (one or two):
+                    FeeStructureTransport.objects.create(structure=structure, route_name=route.strip(), one_way_amount=Decimal(one or "0"), two_way_amount=Decimal(two or "0"))
+            if legacy_term and request.POST.get("due_date"):
+                for class_group in classes:
+                    assign_fee_structure_to_class(fee_structure=structure, class_group=class_group, due_date=datetime.date.fromisoformat(request.POST.get("due_date")), issued_by=request.user, request=request)
             return redirect("dashboard:finance_fee_structures")
         except (ValueError, TypeError) as exc:
             return HttpResponseForbidden(str(exc))
+
+
+class FinanceFeeStructurePDFView(FinanceRequiredMixin, View):
+    def get(self, request, structure_id):
+        structure = get_object_or_404(FeeStructure, pk=structure_id, school=self.get_school(request))
+        from .services import generate_fee_structure_pdf
+        pdf = generate_fee_structure_pdf(structure=structure, student=None, generated_by=request.user, request=request)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="fee_structure_{structure.academic_year.name}.pdf"'
+        return response
+
 
 class FinanceAdminInvoicesView(FinanceRequiredMixin, TemplateView):
     """Spec §19 'Invoices'. List + generate-invoice action, reusing
@@ -2712,6 +2733,10 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                     Class.objects.filter(pk=request.POST.get("current_class_id"), school=school).first()
                     if request.POST.get("current_class_id") else None
                 ),
+                transport_option=request.POST.get("transport_option", "NONE"),
+                transport_period=request.POST.get("transport_period", "NONE"),
+                transport_route=request.POST.get("transport_route", ""),
+                takes_coding_robotics=request.POST.get("takes_coding_robotics") == "on",
                 registered_by=request.user, request=request,
             )
         except (ValueError, TypeError) as exc:
