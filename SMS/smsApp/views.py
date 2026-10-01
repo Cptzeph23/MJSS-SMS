@@ -78,6 +78,15 @@ from .models import (
 )
 from .permissions import RoleRequiredMixin
 from .middleware import user_can_access_school
+# Roles retained in the database for backwards compatibility but not offered
+# for new assignments while those modules are inactive.
+ACTIVE_ROLE_VALUES = {
+    User.Role.SUPER_ADMIN, User.Role.PRINCIPAL_DIRECTOR,
+    User.Role.DEPUTY_PRINCIPAL, User.Role.TEACHER, User.Role.PARENT,
+    User.Role.STUDENT, User.Role.ACCOUNTANT,
+}
+ACTIVE_ROLE_CHOICES = tuple((value, label) for value, label in User.Role.choices if value in ACTIVE_ROLE_VALUES)
+
 from .services import (
     apply_financial_adjustment,
     change_student_status,
@@ -434,7 +443,7 @@ class TranscriptVerifyView(View):
 # =============================================================================
 
 class StudentRequiredMixin(RoleRequiredMixin):
-    allowed_roles = [User.Role.STUDENT]
+    allowed_roles = [User.Role.STUDENT, User.Role.PARENT]
     active_nav = None  # set per-view; drives sidebar active-link highlighting
 
     def get_context_data(self, **kwargs):
@@ -443,6 +452,11 @@ class StudentRequiredMixin(RoleRequiredMixin):
         return context
 
     def get_student(self, request) -> Student:
+        if request.user.role == User.Role.PARENT:
+            child = get_children_for_guardian(guardian_user=request.user).select_related("user", "current_class").first()
+            if child is None:
+                raise Http404("No student is linked to this parent account.")
+            return child
         return get_object_or_404(Student, user=request.user)
 
     def get_current_term(self, student: Student) -> Term | None:
@@ -574,7 +588,7 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
         if search:
             from django.db.models import Q
             users = users.filter(Q(username__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(email__icontains=search))
-        context.update({"users": users, "search": search, "roles": User.Role.choices, "schools": School.objects.all()})
+        context.update({"users": users, "search": search, "roles": ACTIVE_ROLE_CHOICES, "schools": School.objects.all()})
         return context
 
     def post(self, request):
@@ -584,8 +598,8 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
             password = request.POST.get("password", "")
             role = request.POST.get("role", "")
             school_id = request.POST.get("school_id")
-            if not username or not password or role not in {value for value, _label in User.Role.choices}:
-                return HttpResponseForbidden("Username, password, and a valid role are required.")
+            if not username or not password or role not in ACTIVE_ROLE_VALUES:
+                return HttpResponseForbidden("Username, password, and an active role are required.")
             school = get_object_or_404(School, pk=school_id) if school_id else None
             if role != User.Role.SUPER_ADMIN and school is None:
                 return HttpResponseForbidden("A school is required for this role.")
@@ -635,8 +649,8 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
             audit_action = AuditLog.Action.UPDATE
         elif action == "role":
             role = request.POST.get("role")
-            if role not in {value for value, _label in User.Role.choices}:
-                return HttpResponseForbidden("Invalid user role.")
+            if role not in ACTIVE_ROLE_VALUES:
+                return HttpResponseForbidden("That role is inactive and cannot be assigned.")
             user.role = role
             audit_action = AuditLog.Action.ROLE_CHANGE
         else:
@@ -2040,7 +2054,7 @@ class TeacherMarkNotificationReadView(TeacherRequiredMixin, View):
 # =============================================================================
 
 class FinanceRequiredMixin(RoleRequiredMixin):
-    allowed_roles = [User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT]
+    allowed_roles = [User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT]
     active_nav = None
 
     def get_context_data(self, **kwargs):
@@ -2364,7 +2378,7 @@ class FinanceAdminRefundsView(FinanceRequiredMixin, TemplateView):
 # =============================================================================
 
 class StaffAdminRequiredMixin(RoleRequiredMixin):
-    allowed_roles = [User.Role.STAFF_ADMIN]
+    allowed_roles = [User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.STAFF_ADMIN]
     active_nav = None
 
     def get_context_data(self, **kwargs):

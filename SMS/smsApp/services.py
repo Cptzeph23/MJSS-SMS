@@ -94,7 +94,7 @@ def get_dashboard_url_for_role(user: User) -> str:
         User.Role.PRINCIPAL_DIRECTOR: "dashboard:academic_admin_dashboard",
         User.Role.DEPUTY_PRINCIPAL: "dashboard:academic_admin_dashboard",
         User.Role.STUDENT: "dashboard:student_dashboard",
-        User.Role.PARENT: "dashboard:parent_dashboard",
+        User.Role.PARENT: "dashboard:student_dashboard",
         User.Role.TEACHER: "dashboard:teacher_dashboard",
         User.Role.CLASS_TEACHER: "dashboard:teacher_dashboard",
         User.Role.FINANCE_ADMIN: "dashboard:finance_dashboard",

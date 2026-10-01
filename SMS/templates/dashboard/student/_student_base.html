@@ -2,7 +2,7 @@
 {% extends "base.html" %}
 
 {% block sidebar_items %}
-    <li class="nav-item"><a class="nav-link {% if active == 'overview' %}active{% endif %}" href="{% url 'dashboard:student_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
+    <li class="nav-item"><a class="nav-link {% if active == 'overview' %}active{% endif %}" href="{% url 'dashboard:student_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>{% if request.user.role == "PARENT" %}My Child Dashboard{% else %}Overview{% endif %}</a></li>
     <li class="nav-item"><a class="nav-link {% if active == 'academic' %}active{% endif %}" href="{% url 'dashboard:student_academic' %}"><i class="bi bi-mortarboard me-2"></i>Academic</a></li>
     <li class="nav-item"><a class="nav-link {% if active == 'finance' %}active{% endif %}" href="{% url 'dashboard:student_finance' %}"><i class="bi bi-cash-coin me-2"></i>Finance</a></li>
     <li class="nav-item"><a class="nav-link {% if active == 'communication' %}active{% endif %}" href="{% url 'dashboard:student_communication' %}"><i class="bi bi-megaphone me-2"></i>Communication</a></li>
