@@ -293,6 +293,29 @@ def compute_student_subject_completion(*, student, class_subject, term) -> dict[
     }
 
 
+@transaction.atomic
+def create_assessments_for_structure(*, structure, created_by=None, request=None):
+    """Create one draft mark-entry assessment per component and class subject."""
+    from .models import Assessment, ClassSubject, Staff
+    creator_staff = Staff.objects.filter(user=created_by).first() if created_by else None
+    subjects = ClassSubject.objects.filter(class_group__school=structure.school, is_active=True)
+    if structure.subject_id:
+        subjects = subjects.filter(subject_id=structure.subject_id)
+    created = []
+    for class_subject in subjects:
+        for component in structure.components.select_related("assessment_type"):
+            title = component.assessment_type.name
+            assessment, was_created = Assessment.objects.get_or_create(
+                class_subject=class_subject, term=structure.term, component=component,
+                defaults={"title": title, "date": structure.term.start_date, "created_by": creator_staff},
+            )
+            if was_created:
+                created.append(assessment)
+    if created and created_by:
+        log_audit(actor=created_by, action=AuditLog.Action.CREATE, request=request, target_model="AssessmentStructure", target_object_id=structure.pk, description=f"Created {len(created)} mark-entry assessments from {structure.name}")
+    return created
+
+
 # =============================================================================
 # Phase 8 — Result Processing Workflow (spec §14)
 # DRAFT -> SUBMITTED -> REVIEWED -> VERIFIED -> APPROVED -> PUBLISHED.

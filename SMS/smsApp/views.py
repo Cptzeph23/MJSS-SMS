@@ -8,6 +8,7 @@ from django.contrib.auth.views import LoginView as DjangoLoginView
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -30,6 +31,8 @@ from .models import (
     Announcement,
     Assessment,
     AssessmentComponent,
+    AssessmentStructure,
+    AssessmentType,
     AssessmentMark,
     Assignment,
     AssignmentResource,
@@ -37,6 +40,7 @@ from .models import (
     AttendanceRecord,
     AuditLog,
     AttendanceSession,
+    Campus,
     Class,
     ClassSubject,
     CourseMaterial,
@@ -48,6 +52,8 @@ from .models import (
     FeeStructure,
     FeeStructureItem,
     FeeStructureTransport,
+    GradeBand,
+    GradingScheme,
     Guardian,
     Invoice,
     LeaveRequest,
@@ -119,6 +125,7 @@ from .services import (
     record_payment,
     record_family_payment,
     assign_fee_structure_to_class,
+    create_assessments_for_structure,
     record_staff_attendance,
     send_notification,
     register_student,
@@ -1835,84 +1842,11 @@ class TeacherAssessmentsView(TeacherRequiredMixin, TemplateView):
     def post(self, request):
         staff = self.get_staff(request)
         if request.POST.get("action") in {"reopen", "close"}:
-            quiz = get_object_or_404(
-                Quiz, pk=request.POST.get("quiz_id"),
-                class_subject__in=self.get_my_class_subjects(staff),
-            )
+            quiz = get_object_or_404(Quiz, pk=request.POST.get("quiz_id"), class_subject__in=self.get_my_class_subjects(staff))
             quiz.overdue_reopened = request.POST.get("action") == "reopen"
             quiz.save(update_fields=["overdue_reopened", "updated_at"])
             return redirect("dashboard:teacher_assessments")
-        class_subject = self.get_owned_class_subject_or_404(staff, request.POST.get("class_subject_id"))
-        term_id = TeachingAssignment.objects.filter(
-            teacher=staff, class_subject=class_subject, is_active=True
-        ).values_list("term_id", flat=True).first()
-        title = request.POST.get("title", "").strip()
-        if not title or not term_id:
-            return HttpResponseForbidden("Title and an active teaching assignment are required.")
-        kind = request.POST.get("kind")
-        if kind in {"cat", "exam"}:
-            component = get_object_or_404(
-                AssessmentComponent, pk=request.POST.get("component_id"),
-                structure__school=staff.school, structure__term_id=term_id,
-            )
-            Assessment.objects.create(
-                class_subject=class_subject, term_id=term_id, component=component,
-                title=title, created_by=staff,
-            )
-        if kind in {"cat", "exam", "quiz"}:
-            question_type = request.POST.get("question_type") or QuizQuestion.QuestionType.SHORT_ANSWER
-            task_category = {
-                "cat": Quiz.TaskCategory.CAT,
-                "exam": Quiz.TaskCategory.EXAM,
-                "quiz": Quiz.TaskCategory.QUIZ,
-            }[kind]
-            question_file = request.FILES.get("question_file")
-            if question_file:
-                try:
-                    validate_upload(question_file, validate_course_material_content, 5)
-                except (FileValidationError, ValidationError) as exc:
-                    return HttpResponseForbidden(str(exc))
-            quiz = Quiz.objects.create(
-                class_subject=class_subject, term_id=term_id, title=title,
-                description=request.POST.get("description", "").strip(),
-                max_marks=Decimal(request.POST.get("max_marks") or "100"),
-                task_category=task_category,
-                submission_format=request.POST.get("submission_format") or Quiz.SubmissionFormat.TEXT_ENTRY,
-                question_file=question_file,
-                deadline=request.POST.get("deadline") or None,
-                max_attempts=max(1, int(request.POST.get("max_attempts") or 1)), created_by=staff,
-            )
-            question_text_values = request.POST.getlist("question_text") or [request.POST.get("question_text", "")]
-            option_values = request.POST.getlist("options") or [request.POST.get("options", "")]
-            correct_values = request.POST.getlist("correct_option") or [request.POST.get("correct_option", "")]
-            question_texts = [item.strip() for item in question_text_values if item.strip()]
-            if not question_texts:
-                question_texts = ["See the uploaded question document."] if question_file else []
-            for question_index, question_text in enumerate(question_texts, start=1):
-                question = QuizQuestion.objects.create(
-                    quiz=quiz, question_text=question_text,
-                    question_type=question_type,
-                    marks=Decimal(request.POST.get("question_marks") or "1"), order=question_index,
-                )
-                if question_type in (QuizQuestion.QuestionType.MULTIPLE_CHOICE, QuizQuestion.QuestionType.TRUE_FALSE, QuizQuestion.QuestionType.MULTIPLE_ANSWER):
-                    options = [line.strip() for line in option_values[min(question_index - 1, len(option_values) - 1)].splitlines() if line.strip()]
-                    correct = correct_values[min(question_index - 1, len(correct_values) - 1)].strip()
-                    for index, option_text in enumerate(options):
-                        QuizOption.objects.create(
-                            question=question, option_text=option_text, order=index,
-                            is_correct=option_text == correct,
-                        )
-            for student in Student.objects.filter(enrollments__class_subject=class_subject).select_related("user").distinct():
-                send_notification(
-                    recipient=student.user,
-                    notification_type=Notification.NotificationType.TASK_ADDED,
-                    title=f"New {quiz.get_task_category_display()} added",
-                    body=f"{quiz.title} has been added for {class_subject.subject.name}.",
-                    related_model="Quiz", related_object_id=quiz.pk, request=request,
-                )
-        else:
-            return HttpResponseForbidden("Select CAT, Exam, or Quiz.")
-        return redirect("dashboard:teacher_assessments")
+        return HttpResponseForbidden("Teachers do not create assessments. The principal configures assessment structures.")
 
 
 class TeacherQuizAttemptsView(TeacherRequiredMixin, View):
@@ -2688,6 +2622,129 @@ class AcademicAdminRequiredMixin(RoleRequiredMixin):
         # Compatibility for existing single-school legacy accounts.
         schools = School.objects.filter(is_active=True)
         return schools.first() if schools.count() == 1 else None
+
+
+class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
+    """Frontend configuration for the school principal.
+
+    All writes are school-scoped and use the existing curriculum, guardian,
+    enrollment, and assessment models. Structure creation also materializes
+    mark-entry Assessment rows for each relevant class subject, so teachers
+    only enter physical-exam marks.
+    """
+    template_name = "dashboard/academic_admin/configuration.html"
+    active_nav = "configuration"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        school = self.get_school(self.request)
+        campuses = Campus.objects.filter(school=school, is_active=True) if school else Campus.objects.none()
+        classes = Class.objects.filter(school=school, is_active=True).select_related("program") if school else Class.objects.none()
+        subjects = Subject.objects.filter(school=school, is_active=True).select_related("department") if school else Subject.objects.none()
+        class_subjects = ClassSubject.objects.filter(class_group__school=school, is_active=True).select_related("class_group", "subject") if school else ClassSubject.objects.none()
+        context.update({
+            "school": school,
+            "campuses": campuses,
+            "classes": classes,
+            "programs": Program.objects.filter(school=school, is_active=True) if school else [],
+            "subjects": subjects,
+            "departments": Department.objects.filter(school=school, is_active=True) if school else [],
+            "class_subjects": class_subjects,
+            "teachers": Staff.objects.filter(school=school, is_active=True, employment_status=Staff.EmploymentStatus.ACTIVE).select_related("user") if school else [],
+            "students": Student.objects.filter(school=school, is_active=True).select_related("user", "current_class") if school else [],
+            "guardians": Guardian.objects.filter(school=school, is_active=True) if school else [],
+            "academic_years": AcademicYear.objects.filter(school=school) if school else [],
+            "terms": Term.objects.filter(academic_year__school=school) if school else [],
+            "assessment_types": AssessmentType.objects.filter(school=school, is_active=True) if school else [],
+            "structures": AssessmentStructure.objects.filter(school=school).select_related("term", "subject").prefetch_related("components__assessment_type") if school else [],
+            "grading_schemes": GradingScheme.objects.filter(school=school, is_active=True).prefetch_related("bands") if school else [],
+            "report_templates": ReportTemplate.objects.filter(school=school, is_active=True) if school else [],
+            "program_types": Program.ProgramType.choices,
+            "template_keys": ReportTemplate.TemplateKey.choices,
+            "teachers_for_heads": Staff.objects.filter(school=school, is_active=True).select_related("user") if school else [],
+        })
+        return context
+
+    def post(self, request):
+        school = self.get_school(request)
+        action = request.POST.get("action")
+        try:
+            if action == "add_campus":
+                Campus.objects.create(school=school, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip(), address=request.POST.get("address", "").strip(), is_main=request.POST.get("is_main") == "on")
+            elif action == "add_department":
+                campus = Campus.objects.filter(pk=request.POST.get("campus_id"), school=school).first() if request.POST.get("campus_id") else None
+                head = User.objects.filter(pk=request.POST.get("head_id"), staff_profile__school=school).first() if request.POST.get("head_id") else None
+                Department.objects.create(school=school, campus=campus, head=head, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip())
+            elif action == "add_program":
+                department = Department.objects.filter(pk=request.POST.get("department_id"), school=school).first() if request.POST.get("department_id") else None
+                Program.objects.create(school=school, department=department, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip(), program_type=request.POST.get("program_type") or Program.ProgramType.SCHOOL, description=request.POST.get("description", "").strip())
+            elif action == "add_academic_year":
+                AcademicYear.objects.create(school=school, name=request.POST.get("name", "").strip(), start_date=datetime.date.fromisoformat(request.POST.get("start_date")), end_date=datetime.date.fromisoformat(request.POST.get("end_date")), is_current=request.POST.get("is_current") == "on")
+            elif action == "add_term":
+                year = get_object_or_404(AcademicYear, pk=request.POST.get("academic_year_id"), school=school)
+                Term.objects.create(academic_year=year, name=request.POST.get("name", "").strip(), term_number=int(request.POST.get("term_number")), start_date=datetime.date.fromisoformat(request.POST.get("start_date")), end_date=datetime.date.fromisoformat(request.POST.get("end_date")), is_current=request.POST.get("is_current") == "on")
+            elif action == "add_stream":
+                class_group = get_object_or_404(Class, pk=request.POST.get("class_id"), school=school)
+                Stream.objects.create(class_group=class_group, name=request.POST.get("name", "").strip(), capacity=int(request.POST.get("capacity") or 0))
+            elif action == "add_grading_scheme":
+                GradingScheme.objects.create(school=school, name=request.POST.get("name", "").strip(), is_default=request.POST.get("is_default") == "on")
+            elif action == "add_grade_band":
+                scheme = get_object_or_404(GradingScheme, pk=request.POST.get("scheme_id"), school=school)
+                GradeBand.objects.create(scheme=scheme, min_mark=Decimal(request.POST.get("min_mark")), max_mark=Decimal(request.POST.get("max_mark")), grade=request.POST.get("grade", "").strip(), grade_point=Decimal(request.POST.get("grade_point") or "0"), remark=request.POST.get("remark", "").strip())
+            elif action == "add_report_template":
+                ReportTemplate.objects.create(school=school, name=request.POST.get("name", "").strip(), template_key=request.POST.get("template_key") or ReportTemplate.TemplateKey.DEFAULT, show_position=request.POST.get("show_position") == "on", show_gpa=request.POST.get("show_gpa") == "on", show_attendance=request.POST.get("show_attendance") == "on", footer_text=request.POST.get("footer_text", "").strip(), is_default=request.POST.get("is_default") == "on")
+            elif action == "add_class":
+                program = get_object_or_404(Program, pk=request.POST.get("program_id"), school=school, is_active=True)
+                campus = Campus.objects.filter(pk=request.POST.get("campus_id"), school=school).first() if request.POST.get("campus_id") else None
+                department = Department.objects.filter(pk=request.POST.get("department_id"), school=school).first() if request.POST.get("department_id") else None
+                class_teacher = User.objects.filter(pk=request.POST.get("class_teacher_id"), staff_profile__school=school, role=User.Role.TEACHER).first() if request.POST.get("class_teacher_id") else None
+                Class.objects.create(school=school, program=program, campus=campus, department=department, class_teacher=class_teacher, name=request.POST.get("name", "").strip(), level_order=int(request.POST.get("level_order") or 0))
+            elif action == "add_subject":
+                department = Department.objects.filter(pk=request.POST.get("department_id"), school=school).first() if request.POST.get("department_id") else None
+                Subject.objects.create(school=school, code=request.POST.get("code", "").strip(), name=request.POST.get("name", "").strip(), description=request.POST.get("description", "").strip(), department=department)
+            elif action == "assign_subject":
+                class_group = get_object_or_404(Class, pk=request.POST.get("class_id"), school=school)
+                subject = get_object_or_404(Subject, pk=request.POST.get("subject_id"), school=school)
+                class_subject, _ = ClassSubject.objects.get_or_create(class_group=class_group, subject=subject)
+                for structure in AssessmentStructure.objects.filter(school=school, term__academic_year__school=school, is_active=True).filter(Q(subject__isnull=True) | Q(subject=subject)).distinct():
+                    create_assessments_for_structure(structure=structure, created_by=request.user, request=request)
+            elif action == "assign_teacher":
+                class_subject = get_object_or_404(ClassSubject, pk=request.POST.get("class_subject_id"), class_group__school=school)
+                teacher = get_object_or_404(Staff, pk=request.POST.get("teacher_id"), school=school, is_active=True)
+                term = get_object_or_404(Term, pk=request.POST.get("term_id"), academic_year__school=school)
+                TeachingAssignment.objects.update_or_create(class_subject=class_subject, term=term, defaults={"teacher": teacher, "is_active": True})
+            elif action == "enroll_student":
+                student = get_object_or_404(Student, pk=request.POST.get("student_id"), school=school)
+                class_subject = get_object_or_404(ClassSubject, pk=request.POST.get("class_subject_id"), class_group__school=school)
+                academic_year = get_object_or_404(AcademicYear, pk=request.POST.get("academic_year_id"), school=school)
+                Enrollment.objects.get_or_create(student=student, class_subject=class_subject, academic_year=academic_year, defaults={"status": Enrollment.Status.ENROLLED})
+                if student.current_class_id != class_subject.class_group_id:
+                    student.current_class = class_subject.class_group
+                    student.save(update_fields=["current_class", "updated_at"])
+            elif action == "link_guardian":
+                student = get_object_or_404(Student, pk=request.POST.get("student_id"), school=school)
+                guardian = get_object_or_404(Guardian, pk=request.POST.get("guardian_id"), school=school)
+                StudentGuardian.objects.update_or_create(student=student, guardian=guardian, defaults={"is_primary_contact": request.POST.get("is_primary_contact") == "on", "is_billing_contact": request.POST.get("is_billing_contact") == "on"})
+            elif action == "add_assessment_type":
+                AssessmentType.objects.create(school=school, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip().upper())
+            elif action == "add_structure":
+                term = get_object_or_404(Term, pk=request.POST.get("term_id"), academic_year__school=school)
+                subject = Subject.objects.filter(pk=request.POST.get("subject_id"), school=school).first() if request.POST.get("subject_id") else None
+                type_ids = request.POST.getlist("component_type_id")
+                weights = request.POST.getlist("component_weight")
+                max_marks = request.POST.getlist("component_max_marks")
+                if not type_ids or sum(Decimal(value or "0") for value in weights) != Decimal("100"):
+                    return HttpResponseForbidden("Assessment component weights must total exactly 100%.")
+                structure = AssessmentStructure.objects.create(school=school, term=term, subject=subject, name=request.POST.get("structure_name", "").strip())
+                for order, (type_id, weight, maximum) in enumerate(zip(type_ids, weights, max_marks, strict=False), start=1):
+                    assessment_type = get_object_or_404(AssessmentType, pk=type_id, school=school, is_active=True)
+                    AssessmentComponent.objects.create(structure=structure, assessment_type=assessment_type, weight_percentage=Decimal(weight), max_marks=Decimal(maximum or "100"), order=order)
+                create_assessments_for_structure(structure=structure, created_by=request.user, request=request)
+            else:
+                return HttpResponseForbidden("Unsupported configuration action.")
+        except (ValueError, TypeError, IntegrityError) as exc:
+            return HttpResponseForbidden(str(exc))
+        return redirect("dashboard:principal_configuration")
 
 
 class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
