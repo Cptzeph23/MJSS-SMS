@@ -2644,6 +2644,7 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
         context.update({
             "school": school,
             "classes": classes,
+            "streams": Stream.objects.filter(class_group__school=school, is_active=True).select_related("class_group") if school else [],
             "subjects": subjects,
             "departments": Department.objects.filter(school=school, is_active=True) if school else [],
             "class_subjects": class_subjects,
@@ -2659,13 +2660,51 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
             "template_keys": ReportTemplate.TemplateKey.choices,
             "teachers_for_heads": Staff.objects.filter(school=school, is_active=True).select_related("user") if school else [],
         })
+        edit_type = self.request.GET.get("edit")
+        edit_id = self.request.GET.get("id")
+        edit_models = {
+            "department": (Department, {"school": school}), "academic_year": (AcademicYear, {"school": school}),
+            "term": (Term, {"academic_year__school": school}), "class": (Class, {"school": school}),
+            "stream": (Stream, {"class_group__school": school}), "subject": (Subject, {"school": school}),
+            "assessment_type": (AssessmentType, {"school": school}), "grading_scheme": (GradingScheme, {"school": school}),
+            "report_template": (ReportTemplate, {"school": school}), "structure": (AssessmentStructure, {"school": school}),
+        }
+        if edit_type in edit_models and edit_id:
+            model, filters = edit_models[edit_type]
+            context["edit_type"] = edit_type
+            context["edit_object"] = get_object_or_404(model, pk=edit_id, **filters)
         return context
 
     def post(self, request):
         school = self.get_school(request)
         action = request.POST.get("action")
         try:
-            if action == "add_department":
+            if action == "update_module":
+                module = request.POST.get("module")
+                obj_id = request.POST.get("object_id")
+                if module == "department":
+                    obj = get_object_or_404(Department, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.code = request.POST.get("code", "").strip(); obj.save(update_fields=["name", "code", "updated_at"])
+                elif module == "academic_year":
+                    obj = get_object_or_404(AcademicYear, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.start_date = datetime.date.fromisoformat(request.POST.get("start_date")); obj.end_date = datetime.date.fromisoformat(request.POST.get("end_date")); obj.is_current = request.POST.get("is_current") == "on"; obj.save()
+                elif module == "term":
+                    obj = get_object_or_404(Term, pk=obj_id, academic_year__school=school); obj.name = request.POST.get("name", "").strip(); obj.term_number = int(request.POST.get("term_number")); obj.start_date = datetime.date.fromisoformat(request.POST.get("start_date")); obj.end_date = datetime.date.fromisoformat(request.POST.get("end_date")); obj.is_current = request.POST.get("is_current") == "on"; obj.save()
+                elif module == "class":
+                    obj = get_object_or_404(Class, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.level_order = int(request.POST.get("level_order") or 0); obj.save(update_fields=["name", "level_order", "updated_at"])
+                elif module == "stream":
+                    obj = get_object_or_404(Stream, pk=obj_id, class_group__school=school); obj.name = request.POST.get("name", "").strip(); obj.capacity = int(request.POST.get("capacity") or 0); obj.save(update_fields=["name", "capacity", "updated_at"])
+                elif module == "subject":
+                    obj = get_object_or_404(Subject, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.code = request.POST.get("code", "").strip(); obj.description = request.POST.get("description", "").strip(); obj.save(update_fields=["name", "code", "description", "updated_at"])
+                elif module == "assessment_type":
+                    obj = get_object_or_404(AssessmentType, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.code = request.POST.get("code", "").strip().upper(); obj.save(update_fields=["name", "code", "updated_at"])
+                elif module == "grading_scheme":
+                    obj = get_object_or_404(GradingScheme, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.is_default = request.POST.get("is_default") == "on"; obj.save()
+                elif module == "report_template":
+                    obj = get_object_or_404(ReportTemplate, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.footer_text = request.POST.get("footer_text", "").strip(); obj.is_default = request.POST.get("is_default") == "on"; obj.save(update_fields=["name", "footer_text", "is_default", "updated_at"])
+                elif module == "structure":
+                    obj = get_object_or_404(AssessmentStructure, pk=obj_id, school=school); obj.name = request.POST.get("name", "").strip(); obj.save(update_fields=["name", "updated_at"])
+                else:
+                    return HttpResponseForbidden("Unsupported module edit.")
+            elif action == "add_department":
                 head = User.objects.filter(pk=request.POST.get("head_id"), staff_profile__school=school).first() if request.POST.get("head_id") else None
                 Department.objects.create(school=school, head=head, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip())
             elif action == "add_academic_year":
