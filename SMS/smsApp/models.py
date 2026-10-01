@@ -111,6 +111,10 @@ class School(models.Model):
     so the schema is multi-school-ready without a later migration."""
 
     name = models.CharField(max_length=255)
+    short_name = models.CharField(
+        max_length=80, blank=True,
+        help_text="Compact name used in dashboard navigation, e.g. Mihango-High.",
+    )
     code = models.CharField(max_length=20, unique=True)
     subdomain = models.CharField(
         max_length=63, unique=True, blank=True, null=True,

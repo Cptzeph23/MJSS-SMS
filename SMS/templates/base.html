@@ -127,7 +127,11 @@
             {% else %}
                 <i class="bi bi-mortarboard-fill"></i>
             {% endif %}
-            <span>SMS</span>
+            {% if dashboard_school %}
+                <span title="{{ dashboard_school.name }}">{{ dashboard_school.short_name|default:dashboard_school.name }}</span>
+            {% else %}
+                <span>SMS</span>
+            {% endif %}
         </div>
         <ul class="nav flex-column gap-1">
             <li class="nav-item">

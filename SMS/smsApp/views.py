@@ -658,6 +658,7 @@ class SuperAdminSchoolConfigView(SuperAdminRequiredMixin, TemplateView):
         school = get_object_or_404(School, pk=request.POST.get("school_id")) if action == "update" and request.POST.get("school_id") else (School.objects.first() if action == "update" else School())
         previous = {"name": school.name, "code": school.code, "motto": school.motto, "address": school.address, "phone_number": school.phone_number, "email": school.email, "enable_position_ranking": school.enable_position_ranking}
         school.name = request.POST.get("name", "").strip()
+        school.short_name = request.POST.get("short_name", "").strip()
         school.code = request.POST.get("code", "").strip()
         school.subdomain = request.POST.get("subdomain", "").strip().lower() or None
         school.motto = request.POST.get("motto", "").strip()

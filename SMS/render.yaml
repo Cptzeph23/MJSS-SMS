@@ -28,7 +28,11 @@ services:
       - key: SECRET_KEY
         sync: false
       - key: ALLOWED_HOSTS
-        sync: false  # e.g. your-app.onrender.com,yourschool.example.com
+        sync: false  # e.g. your-app.onrender.com,example.com,.example.com
+      - key: TENANT_ROOT_DOMAIN
+        sync: false  # e.g. example.com
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false  # e.g. https://example.com,https://*.example.com
 
       # Supabase PostgreSQL (spec §41)
       - key: DATABASE_URL

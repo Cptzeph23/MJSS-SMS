@@ -14,7 +14,18 @@ from django.core.exceptions import ImproperlyConfigured
 
 DEBUG = False
 
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")  # required, no default in prod
+# Production tenant hosts are derived from one controlled root domain. The
+# explicit ALLOWED_HOSTS value still carries Render/custom hosts; the leading
+# dot admits only subdomains of TENANT_ROOT_DOMAIN.
+TENANT_ROOT_DOMAIN = env("TENANT_ROOT_DOMAIN").strip().lower().lstrip(".").rstrip(".")
+if TENANT_ROOT_DOMAIN in {"localhost", "127.0.0.1"} or not TENANT_ROOT_DOMAIN:
+    raise ImproperlyConfigured(
+        "Production requires TENANT_ROOT_DOMAIN to be the real controlled domain."
+    )
+ALLOWED_HOSTS = sorted(set(env.list("ALLOWED_HOSTS") + [
+    TENANT_ROOT_DOMAIN,
+    f".{TENANT_ROOT_DOMAIN}",
+]))
 
 # ---------------------------------------------------------------------------
 # Database — Supabase PostgreSQL (required; no fallback in production)
@@ -42,7 +53,13 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+CSRF_TRUSTED_ORIGINS = sorted(set(
+    env.list("CSRF_TRUSTED_ORIGINS", default=[])
+    + [
+        f"https://{TENANT_ROOT_DOMAIN}",
+        f"https://*.{TENANT_ROOT_DOMAIN}",
+    ]
+))
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = env("EMAIL_HOST", default="")
