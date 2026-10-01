@@ -14,6 +14,7 @@ class BrandingTemplateTests(SimpleTestCase):
     def test_sidebar_uses_school_logo_with_icon_fallback(self):
         base = Path("templates/base.html").read_text()
         self.assertIn("dashboard_school.logo.url", base)
+        self.assertIn("dashboard_school.short_name", base)
         self.assertIn("bi-mortarboard-fill", base)
 
     def test_login_is_school_branded(self):

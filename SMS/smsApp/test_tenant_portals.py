@@ -13,6 +13,7 @@ class TenantPortalTests(TestCase):
     def setUp(self):
         self.springfield = School.objects.create(
             name="Springfield High",
+            short_name="Springfield-High",
             code="SPR",
             subdomain="springfield",
             motto="Learn and lead",
@@ -86,6 +87,10 @@ class TenantPortalTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertIn("_auth_user_id", self.client.session)
+
+        response = self.client.get("/teacher/", HTTP_HOST="springfield.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Springfield-High")
 
         response = self.client.get("/", HTTP_HOST="oakridge.localhost")
         self.assertEqual(response.status_code, 404)
