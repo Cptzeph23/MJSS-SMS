@@ -5,12 +5,10 @@
 {% block breadcrumbs %}
     <li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li>
     <li class="breadcrumb-item active">Academic Admin</li>
-<div class="card sms-stat-card mt-4 p-3"><div class="text-muted small text-uppercase fw-semibold mb-3">School management modules</div><div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-primary" href="{% url 'dashboard:academic_admin_students' %}">Students &amp; enrolment</a><a class="btn btn-outline-primary" href="{% url 'dashboard:academic_admin_results_approval' %}">Results</a><a class="btn btn-outline-primary" href="{% url 'dashboard:academic_admin_attendance_correction' %}">Attendance</a><a class="btn btn-outline-primary" href="{% url 'dashboard:staff_admin_staff_list' %}">Staff</a><a class="btn btn-outline-primary" href="{% url 'dashboard:finance_fee_structures' %}">Finance &amp; fees</a><a class="btn btn-outline-primary" href="{% url 'dashboard:finance_invoices' %}">Invoices</a></div></div>
-
 {% endblock %}
 
 {% block content %}
-<h3 class="mb-1">{% if request.user.role == "PRINCIPAL_DIRECTOR" %}Principal Dashboard{% elif request.user.role == "DEPUTY_PRINCIPAL" %}Deputy Principal Dashboard{% else %}Academic Admin Overview{% endif %}</h3>
+<h3 class="mb-1">Academic Admin Overview</h3>
 <p class="text-muted mb-4">Students, enrollment, and result-approval status across the school.</p>
 
 <div class="row g-3">

@@ -2085,7 +2085,7 @@ class FinanceAdminDashboardView(FinanceRequiredMixin, TemplateView):
     on this page."""
 
     template_name = "dashboard/finance/overview.html"
-    active_nav = "overview"
+    active_nav = "finance_overview"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -2396,7 +2396,7 @@ class StaffAdminDashboardView(StaffAdminRequiredMixin, TemplateView):
     requests, today's attendance summary."""
 
     template_name = "dashboard/staff_admin/overview.html"
-    active_nav = "overview"
+    active_nav = "staff_overview"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
