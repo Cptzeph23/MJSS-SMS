@@ -339,7 +339,7 @@ class Class(models.Model):
     campus = models.ForeignKey(
         Campus, on_delete=models.SET_NULL, related_name="classes", blank=True, null=True
     )
-    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name="classes")
+    program = models.ForeignKey(Program, on_delete=models.SET_NULL, related_name="classes", blank=True, null=True)
     department = models.ForeignKey(
         Department, on_delete=models.SET_NULL, related_name="classes", blank=True, null=True
     )
@@ -367,7 +367,7 @@ class Class(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.name} ({self.program.name})"
+        return f"{self.name} ({self.program.name if self.program_id else 'No program'})"
 
 
 class Stream(models.Model):

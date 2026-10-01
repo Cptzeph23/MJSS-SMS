@@ -2638,15 +2638,12 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
-        campuses = Campus.objects.filter(school=school, is_active=True) if school else Campus.objects.none()
         classes = Class.objects.filter(school=school, is_active=True).select_related("program") if school else Class.objects.none()
         subjects = Subject.objects.filter(school=school, is_active=True).select_related("department") if school else Subject.objects.none()
         class_subjects = ClassSubject.objects.filter(class_group__school=school, is_active=True).select_related("class_group", "subject") if school else ClassSubject.objects.none()
         context.update({
             "school": school,
-            "campuses": campuses,
             "classes": classes,
-            "programs": Program.objects.filter(school=school, is_active=True) if school else [],
             "subjects": subjects,
             "departments": Department.objects.filter(school=school, is_active=True) if school else [],
             "class_subjects": class_subjects,
@@ -2659,7 +2656,6 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
             "structures": AssessmentStructure.objects.filter(school=school).select_related("term", "subject").prefetch_related("components__assessment_type") if school else [],
             "grading_schemes": GradingScheme.objects.filter(school=school, is_active=True).prefetch_related("bands") if school else [],
             "report_templates": ReportTemplate.objects.filter(school=school, is_active=True) if school else [],
-            "program_types": Program.ProgramType.choices,
             "template_keys": ReportTemplate.TemplateKey.choices,
             "teachers_for_heads": Staff.objects.filter(school=school, is_active=True).select_related("user") if school else [],
         })
@@ -2669,15 +2665,9 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
         school = self.get_school(request)
         action = request.POST.get("action")
         try:
-            if action == "add_campus":
-                Campus.objects.create(school=school, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip(), address=request.POST.get("address", "").strip(), is_main=request.POST.get("is_main") == "on")
-            elif action == "add_department":
-                campus = Campus.objects.filter(pk=request.POST.get("campus_id"), school=school).first() if request.POST.get("campus_id") else None
+            if action == "add_department":
                 head = User.objects.filter(pk=request.POST.get("head_id"), staff_profile__school=school).first() if request.POST.get("head_id") else None
-                Department.objects.create(school=school, campus=campus, head=head, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip())
-            elif action == "add_program":
-                department = Department.objects.filter(pk=request.POST.get("department_id"), school=school).first() if request.POST.get("department_id") else None
-                Program.objects.create(school=school, department=department, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip(), program_type=request.POST.get("program_type") or Program.ProgramType.SCHOOL, description=request.POST.get("description", "").strip())
+                Department.objects.create(school=school, head=head, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip())
             elif action == "add_academic_year":
                 AcademicYear.objects.create(school=school, name=request.POST.get("name", "").strip(), start_date=datetime.date.fromisoformat(request.POST.get("start_date")), end_date=datetime.date.fromisoformat(request.POST.get("end_date")), is_current=request.POST.get("is_current") == "on")
             elif action == "add_term":
@@ -2694,11 +2684,9 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
             elif action == "add_report_template":
                 ReportTemplate.objects.create(school=school, name=request.POST.get("name", "").strip(), template_key=request.POST.get("template_key") or ReportTemplate.TemplateKey.DEFAULT, show_position=request.POST.get("show_position") == "on", show_gpa=request.POST.get("show_gpa") == "on", show_attendance=request.POST.get("show_attendance") == "on", footer_text=request.POST.get("footer_text", "").strip(), is_default=request.POST.get("is_default") == "on")
             elif action == "add_class":
-                program = get_object_or_404(Program, pk=request.POST.get("program_id"), school=school, is_active=True)
-                campus = Campus.objects.filter(pk=request.POST.get("campus_id"), school=school).first() if request.POST.get("campus_id") else None
                 department = Department.objects.filter(pk=request.POST.get("department_id"), school=school).first() if request.POST.get("department_id") else None
                 class_teacher = User.objects.filter(pk=request.POST.get("class_teacher_id"), staff_profile__school=school, role=User.Role.TEACHER).first() if request.POST.get("class_teacher_id") else None
-                Class.objects.create(school=school, program=program, campus=campus, department=department, class_teacher=class_teacher, name=request.POST.get("name", "").strip(), level_order=int(request.POST.get("level_order") or 0))
+                Class.objects.create(school=school, department=department, class_teacher=class_teacher, name=request.POST.get("name", "").strip(), level_order=int(request.POST.get("level_order") or 0))
             elif action == "add_subject":
                 department = Department.objects.filter(pk=request.POST.get("department_id"), school=school).first() if request.POST.get("department_id") else None
                 Subject.objects.create(school=school, code=request.POST.get("code", "").strip(), name=request.POST.get("name", "").strip(), description=request.POST.get("description", "").strip(), department=department)
