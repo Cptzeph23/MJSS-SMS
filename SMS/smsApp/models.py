@@ -19,6 +19,8 @@ from decimal import Decimal
 import uuid
 
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 
 from .validators import (
@@ -95,12 +97,26 @@ class User(AbstractUser):
 # School FK on every node, even though the first deployment serves one school.
 # =============================================================================
 
+RESERVED_SCHOOL_SUBDOMAINS = {"www", "api", "admin", "static", "media"}
+
+
+SUBDOMAIN_VALIDATOR = RegexValidator(
+    regex=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    message="Use 1-63 lowercase letters, numbers, or internal hyphens.",
+)
+
+
 class School(models.Model):
     """Root tenant. Every other academic-structure model traces back here
     so the schema is multi-school-ready without a later migration."""
 
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=20, unique=True)
+    subdomain = models.CharField(
+        max_length=63, unique=True, blank=True, null=True,
+        validators=[SUBDOMAIN_VALIDATOR],
+        help_text="Unique lowercase school portal identifier.",
+    )
     motto = models.CharField(max_length=255, blank=True)
     logo = models.ImageField(
         upload_to="school/logos/", blank=True, null=True,
@@ -109,6 +125,14 @@ class School(models.Model):
     address = models.TextField(blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
+    primary_color = models.CharField(
+        max_length=7, default="#6f1d32",
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a six-digit hex color.")],
+    )
+    secondary_color = models.CharField(
+        max_length=7, default="#4d4d4d",
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a six-digit hex color.")],
+    )
     established_date = models.DateField(blank=True, null=True)
     enable_position_ranking = models.BooleanField(
         default=True,
@@ -123,6 +147,13 @@ class School(models.Model):
     class Meta:
         db_table = "schools"
         ordering = ["name"]
+
+    def clean(self):
+        super().clean()
+        if self.subdomain:
+            self.subdomain = self.subdomain.strip().lower()
+            if self.subdomain in RESERVED_SCHOOL_SUBDOMAINS:
+                raise ValidationError({"subdomain": "This subdomain is reserved."})
 
     def __str__(self) -> str:
         return self.name

@@ -74,6 +74,7 @@ from .models import (
     User,
 )
 from .permissions import RoleRequiredMixin
+from .middleware import user_can_access_school
 from .services import (
     apply_financial_adjustment,
     change_student_status,
@@ -151,6 +152,13 @@ class LoginView(DjangoLoginView):
 
     def form_valid(self, form):
         from django.core.cache import cache
+
+        school = getattr(self.request, "school", None)
+        if school is not None and not user_can_access_school(form.get_user(), school):
+            # Keep the response deliberately generic: do not disclose whether
+            # this username exists in another school's tenant.
+            form.add_error(None, "Unable to sign in with these credentials.")
+            return self.form_invalid(form)
 
         cache.delete(self._lockout_cache_key())  # successful login clears the counter
         response = super().form_valid(form)
@@ -651,19 +659,25 @@ class SuperAdminSchoolConfigView(SuperAdminRequiredMixin, TemplateView):
         previous = {"name": school.name, "code": school.code, "motto": school.motto, "address": school.address, "phone_number": school.phone_number, "email": school.email, "enable_position_ranking": school.enable_position_ranking}
         school.name = request.POST.get("name", "").strip()
         school.code = request.POST.get("code", "").strip()
+        school.subdomain = request.POST.get("subdomain", "").strip().lower() or None
         school.motto = request.POST.get("motto", "").strip()
         school.address = request.POST.get("address", "").strip()
         school.phone_number = request.POST.get("phone_number", "").strip()
         school.email = request.POST.get("email", "").strip()
+        school.primary_color = request.POST.get("primary_color", "").strip() or school.primary_color
+        school.secondary_color = request.POST.get("secondary_color", "").strip() or school.secondary_color
         school.established_date = request.POST.get("established_date") or None
         school.enable_position_ranking = request.POST.get("enable_position_ranking") == "on"
         if action == "create" or "is_active" in request.POST:
             school.is_active = request.POST.get("is_active") == "on"
         if not school.name or not school.code:
             return HttpResponseForbidden("School name and code are required.")
+        if action == "create" and not school.subdomain:
+            return HttpResponseForbidden("A school subdomain is required.")
         try:
             if request.FILES.get("logo"):
                 school.logo = request.FILES["logo"]
+            school.full_clean()
             school.save()
         except Exception as exc:
             return HttpResponseForbidden(str(exc))

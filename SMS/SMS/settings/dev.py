@@ -7,7 +7,7 @@ from .base import env, BASE_DIR, supabase_storage_options
 
 DEBUG = True
 
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = sorted(set(env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"]) + [".localhost"]))
 
 # ---------------------------------------------------------------------------
 # Database — Supabase PostgreSQL (falls back to local sqlite if DATABASE_URL

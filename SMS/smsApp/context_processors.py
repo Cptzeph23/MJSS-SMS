@@ -13,7 +13,7 @@ def _notification_cache_key(user_id):
 def _school_for_request(request):
     """Return the school unambiguously associated with this request."""
     if not request.user.is_authenticated:
-        return School.objects.filter(is_active=True).order_by("name").first()
+        return getattr(request, "school", None)
 
     selected_id = request.session.get("selected_school_id")
     if request.user.is_superuser and selected_id:

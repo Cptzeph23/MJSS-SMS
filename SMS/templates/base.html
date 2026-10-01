@@ -74,14 +74,14 @@
             top: 0;
             height: 100vh;
             overflow-y: auto;
-            background-color: var(--sms-maroon-900);
+            background-color: var(--sms-school-primary, var(--sms-maroon-900));
             color: #cfe6db;
         }
         .sms-sidebar .sms-brand { color: #ffffff; }
         .sms-sidebar a { color: #cfe6db; text-decoration: none; }
         .sms-sidebar a.active {
             color: #ffffff;
-            background-color: var(--sms-maroon-700);
+            background-color: var(--sms-school-secondary, var(--sms-maroon-700));
             font-weight: 500;
         }
         .sms-sidebar a:hover:not(.active) { color: #ffffff; background-color: rgba(255,255,255,.08); }
@@ -119,7 +119,7 @@
 </head>
 <body>
 <div class="d-flex">
-    <nav class="sms-sidebar p-3" style="width: 260px; flex-shrink: 0;">
+    <nav class="sms-sidebar p-3" style="width: 260px; flex-shrink: 0; --sms-school-primary: {{ dashboard_school.primary_color|default:'#6f1d32' }}; --sms-school-secondary: {{ dashboard_school.secondary_color|default:'#4d4d4d' }};">
         <div class="fs-4 fw-semibold sms-brand mb-4 d-flex align-items-center gap-2">
             {% if dashboard_school and dashboard_school.logo %}
                 <img src="{{ dashboard_school.logo.url }}" alt="{{ dashboard_school.name }} logo"

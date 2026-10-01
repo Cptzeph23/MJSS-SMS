@@ -90,8 +90,9 @@ class UserAdmin(DjangoUserAdmin):
 
 @admin.register(School)
 class SchoolAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "is_active", "created_at")
-    search_fields = ("name", "code")
+    list_display = ("name", "code", "subdomain", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("name", "code", "subdomain")
 
 
 @admin.register(Campus)

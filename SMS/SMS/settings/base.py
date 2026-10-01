@@ -20,6 +20,10 @@ environ.Env.read_env(BASE_DIR / ".env")  # SMS/.env (never commit this file)
 
 SECRET_KEY = env("SECRET_KEY")
 
+# Tenant host configuration. Development uses *.localhost; production must
+# override this with the controlled root domain (for example example.com).
+TENANT_ROOT_DOMAIN = env("TENANT_ROOT_DOMAIN", default="localhost")
+
 # ---------------------------------------------------------------------------
 # Applications
 # ---------------------------------------------------------------------------
@@ -55,6 +59,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "smsApp.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
