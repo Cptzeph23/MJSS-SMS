@@ -1323,7 +1323,7 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
         ).distinct().order_by("-payment_date")
         account_summary = compute_student_account_summary(student=child)
         family_summary = compute_family_account_summary(guardian=guardian)
-        fee_structures = FeeStructure.objects.filter(school=child.school, academic_year__is_current=True, is_active=True).filter(class_groups=child.current_class).prefetch_related("items__category", "transport_options").distinct()
+        fee_structures = FeeStructure.objects.filter(school=child.school, academic_year__is_current=True, is_active=True).filter(Q(class_groups=child.current_class) | Q(class_group=child.current_class)).prefetch_related("items__category", "transport_options").distinct()
 
         context.update({
             "student": child,
@@ -1340,7 +1340,7 @@ class ParentFeeStructurePDFView(ParentRequiredMixin, View):
     def get(self, request, student_id, structure_id):
         child = self.get_child_or_404(request, student_id)
         structure = get_object_or_404(FeeStructure, pk=structure_id, school=child.school, is_active=True)
-        if not structure.class_groups.filter(pk=child.current_class_id).exists():
+        if not (structure.class_group_id == child.current_class_id or structure.class_groups.filter(pk=child.current_class_id).exists()):
             raise Http404("Fee structure not found.")
         from .services import generate_fee_structure_pdf
         pdf = generate_fee_structure_pdf(structure=structure, student=child, generated_by=request.user, request=request)
@@ -2068,8 +2068,13 @@ class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
             .select_related("academic_year", "term", "class_group")
             .prefetch_related("items__category", "class_groups", "transport_options", "invoices")
             .order_by("-created_at") if school else FeeStructure.objects.none())
+        edit_id = self.request.GET.get("edit")
+        edit_structure = get_object_or_404(
+            FeeStructure.objects.prefetch_related("items", "transport_options", "class_groups"),
+            pk=edit_id, school=school,
+        ) if edit_id else None
         context.update({
-            "school": school, "structures": structures,
+            "school": school, "structures": structures, "edit_structure": edit_structure,
             "academic_years": AcademicYear.objects.filter(school=school) if school else [],
             "terms": Term.objects.filter(academic_year__school=school) if school else [],
             "classes": Class.objects.filter(school=school, is_active=True).select_related("program") if school else [],
@@ -2080,6 +2085,39 @@ class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
 
     def post(self, request):
         school = self.get_school(request)
+        if request.POST.get("action") == "update_fee_structure":
+            structure = get_object_or_404(FeeStructure, pk=request.POST.get("structure_id"), school=school)
+            class_ids = request.POST.getlist("class_ids")
+            classes = list(Class.objects.filter(pk__in=class_ids, school=school, is_active=True))
+            if not classes:
+                return HttpResponseForbidden("Select at least one class.")
+            structure.name = request.POST.get("name", "").strip()
+            structure.paybill_number = request.POST.get("paybill_number", "").strip()
+            structure.account_number = request.POST.get("account_number", "").strip()
+            structure.class_group = classes[0]
+            structure.save(update_fields=["name", "paybill_number", "account_number", "class_group"])
+            structure.class_groups.set(classes)
+            for item_id, particulars, t1, t2, t3 in zip(
+                request.POST.getlist("item_id"), request.POST.getlist("item_particulars"),
+                request.POST.getlist("item_term_1"), request.POST.getlist("item_term_2"),
+                request.POST.getlist("item_term_3"), strict=False,
+            ):
+                item = get_object_or_404(FeeStructureItem, pk=item_id, structure=structure)
+                vals = [Decimal(t1 or "0"), Decimal(t2 or "0"), Decimal(t3 or "0")]
+                item.particulars = particulars.strip()
+                item.term_1_amount, item.term_2_amount, item.term_3_amount = vals
+                item.amount = sum(vals)
+                item.save(update_fields=["particulars", "term_1_amount", "term_2_amount", "term_3_amount", "amount"])
+            for route_id, route, one, two in zip(
+                request.POST.getlist("route_id"), request.POST.getlist("edit_route_name"),
+                request.POST.getlist("edit_one_way_amount"), request.POST.getlist("edit_two_way_amount"), strict=False,
+            ):
+                transport = get_object_or_404(FeeStructureTransport, pk=route_id, structure=structure)
+                transport.route_name = route.strip()
+                transport.one_way_amount = Decimal(one or "0")
+                transport.two_way_amount = Decimal(two or "0")
+                transport.save(update_fields=["route_name", "one_way_amount", "two_way_amount"])
+            return redirect("dashboard:finance_fee_structures")
         academic_year = get_object_or_404(AcademicYear, pk=request.POST.get("academic_year_id"), school=school)
         class_ids = request.POST.getlist("class_ids") or ([request.POST.get("class_id")] if request.POST.get("class_id") else [])
         classes = list(Class.objects.filter(pk__in=class_ids, school=school, is_active=True))

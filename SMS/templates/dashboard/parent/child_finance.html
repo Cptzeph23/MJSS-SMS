@@ -13,7 +13,7 @@
 <div class="alert alert-light border mb-4">
     <h5 class="mb-3">Family Account</h5>
     <div class="row g-3">
-        <div class="col-md-4"><div class="text-muted small">Family Obligation</div><div class="fs-5">{{ family_summary.total_billed }}</div></div>
+        <div class="col-md-4"><div class="text-muted small">Family Total Billed</div><div class="fs-5">{{ family_summary.total_billed }}</div></div>
         <div class="col-md-4"><div class="text-muted small">Family Paid</div><div class="fs-5">{{ family_summary.total_paid }}</div></div>
         <div class="col-md-4"><div class="text-muted small">Family Balance</div><div class="fs-5">{{ family_summary.outstanding_balance }}</div></div>
     </div>
@@ -56,7 +56,7 @@
     </div>
 </div>
 
-<h5>Fee structures</h5><div class="list-group mb-4">{% for structure in fee_structures %}<a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'dashboard:parent_fee_structure_pdf' student.pk structure.pk %}"><span>{{ structure.name }} — {{ structure.academic_year.name }}</span><span>View PDF</span></a>{% empty %}<div class="text-muted">No fee structure published for this class.</div>{% endfor %}</div>
+<h5>Published fee structures</h5><div class="small text-muted mb-2">These totals are calculated directly from the applicable class fee structure.</div><div class="list-group mb-4">{% for structure in fee_structures %}<a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'dashboard:parent_fee_structure_pdf' student.pk structure.pk %}"><span>{{ structure.name }} — {{ structure.academic_year.name }}</span><span>View PDF</span></a>{% empty %}<div class="text-muted">No fee structure published for this class.</div>{% endfor %}</div>
 
 <h5>Invoices</h5>
 <table class="table table-sm">

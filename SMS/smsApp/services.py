@@ -1453,36 +1453,109 @@ def apply_financial_adjustment(
     return adjustment
 
 
-def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
-    """Spec §19 'Student accounts', 'Balances', 'Arrears'. Aggregates
-    across every invoice for the student — deliberately returns only
-    financial totals, no academic data (spec: 'Do not expose academic
-    grades to Finance Admin')."""
-    from django.utils import timezone
+def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]:
+    """Calculate the current annual fee directly from the class structure.
 
-    from .models import Invoice, Payment
+    A structure may cover several classes (for example Grades 7–9). Optional
+    coding/robotics and transport rows are included only when the student's
+    registration preferences select them.
+    """
+    from .models import FeeStructure
+    from django.db.models import Q
 
-    invoices = Invoice.objects.filter(student=student).exclude(
-        status=Invoice.Status.CANCELLED
+    if not student.current_class_id:
+        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None}
+    structures = list(
+        FeeStructure.objects.filter(
+            school=student.school, academic_year__is_current=True, is_active=True,
+        ).filter(Q(class_groups=student.current_class) | Q(class_group=student.current_class))
+        .prefetch_related("items__category", "transport_options")
+        .distinct().order_by("term__term_number", "-created_at")
     )
-    total_billed = invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+    if not structures:
+        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None}
 
-    total_paid = Payment.objects.filter(
+    # Prefer one annual structure. If a school configured one structure per
+    # term instead, sum the term structures without requiring invoices.
+    annual = [structure for structure in structures if structure.term_id is None]
+    selected = annual[:1] or structures
+    items = []
+    total = Decimal("0")
+    for structure in selected:
+        for item in structure.items.all():
+            label = f"{item.particulars or item.category.name}".lower()
+            if ("coding" in label or "robotic" in label) and not student.takes_coding_robotics:
+                continue
+            if "transport" in label or "bus" in label:
+                continue
+            amount = item.term_1_amount + item.term_2_amount + item.term_3_amount
+            total += amount
+            items.append({"structure": structure, "item": item, "amount": amount})
+
+    transport = None
+    if student.transport_option != "NONE" and student.transport_route:
+        for structure in selected:
+            transport = next(
+                (option for option in structure.transport_options.all()
+                 if option.route_name.strip().lower() == student.transport_route.strip().lower()),
+                None,
+            )
+            if transport:
+                break
+        if transport:
+            amount = transport.two_way_amount if student.transport_option == "TWO_WAY" else transport.one_way_amount
+            total += amount
+
+    return {
+        "structure": selected[0] if len(selected) == 1 else None,
+        "structures": selected,
+        "total": total,
+        "items": items,
+        "transport": transport,
+    }
+
+
+def _student_paid_total(*, student: Student) -> Decimal:
+    from .models import Payment, PaymentAllocation
+    direct = Payment.objects.filter(
         invoice__student=student, status=Payment.Status.COMPLETED
     ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    allocated = PaymentAllocation.objects.filter(
+        invoice__student=student, payment__status=Payment.Status.COMPLETED
+    ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    return direct + allocated
+
+
+def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
+    """Return direct fee-structure billing plus payment history.
+
+    Invoice totals remain the fallback for legacy students without an active
+    class fee structure. Completed payments continue to come from the real
+    payment ledger, so the balance updates immediately after payment.
+    """
+    from django.utils import timezone
+    from .models import Invoice, Payment
+
+    structure_summary = compute_student_fee_structure_summary(student=student)
+    invoices = Invoice.objects.filter(student=student).exclude(status=Invoice.Status.CANCELLED)
+    invoice_total = invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+    total_billed = structure_summary["total"] if structure_summary["structure"] or structure_summary.get("structures") else invoice_total
+    total_paid = _student_paid_total(student=student)
 
     today = timezone.localtime(timezone.now()).date()
-    arrears = invoices.filter(
-        due_date__lt=today
-    ).exclude(status=Invoice.Status.PAID).aggregate(
+    arrears = invoices.filter(due_date__lt=today).exclude(status=Invoice.Status.PAID).aggregate(
         total=_sum("total_amount")
     )["total"] or Decimal("0")
-
     return {
         "total_billed": total_billed,
         "total_paid": total_paid,
-        "outstanding_balance": total_billed - total_paid,
+        "outstanding_balance": max(total_billed - total_paid, Decimal("0")),
         "arrears": arrears,
+        "fee_structure": structure_summary["structure"],
+        "fee_structures": structure_summary.get("structures", []),
+        "fee_items": structure_summary["items"],
+        "fee_transport": structure_summary["transport"],
+        "billed_from_fee_structure": bool(structure_summary["structure"] or structure_summary.get("structures")),
     }
 
 
@@ -1525,20 +1598,21 @@ def record_family_payment(*, guardian, amount: Decimal, allocations: list[tuple]
 
 
 def compute_family_account_summary(*, guardian) -> dict[str, Any]:
-    """Return family totals and one balance row per linked child."""
-    from .models import Invoice, Payment, PaymentAllocation
-    children = Student.objects.filter(studentguardian__guardian=guardian).select_related("user").distinct()
+    """Return direct fee-structure totals and payment totals per child."""
+    children = Student.objects.filter(studentguardian__guardian=guardian).select_related("user", "current_class").distinct()
     rows, total_billed, total_paid = [], Decimal("0"), Decimal("0")
     for child in children:
-        invoices = Invoice.objects.filter(student=child).exclude(status=Invoice.Status.CANCELLED)
-        billed = invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
-        direct = Payment.objects.filter(invoice__student=child, status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-        allocated = PaymentAllocation.objects.filter(invoice__student=child, payment__status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-        paid = direct + allocated
+        account = compute_student_account_summary(student=child)
+        billed, paid = account["total_billed"], account["total_paid"]
         total_billed += billed
         total_paid += paid
-        rows.append({"student": child, "total_billed": billed, "total_paid": paid, "outstanding_balance": billed - paid})
-    return {"guardian": guardian, "children": rows, "total_billed": total_billed, "total_paid": total_paid, "outstanding_balance": total_billed - total_paid}
+        rows.append({
+            "student": child, "total_billed": billed, "total_paid": paid,
+            "outstanding_balance": max(billed - paid, Decimal("0")),
+            "fee_structure": account.get("fee_structure"),
+            "billed_from_fee_structure": account.get("billed_from_fee_structure", False),
+        })
+    return {"guardian": guardian, "children": rows, "total_billed": total_billed, "total_paid": total_paid, "outstanding_balance": max(total_billed - total_paid, Decimal("0"))}
 
 
 # Phase 13 — Library Module (spec §20)
