@@ -1,0 +1,16 @@
+{% extends "dashboard/academic_admin/_academic_admin_base.html" %}
+{% block title %}Parents & Guardians — SMS{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li><li class="breadcrumb-item active">Parents &amp; Guardians</li>{% endblock %}
+{% block content %}
+<h3 class="mb-1">Parents &amp; Guardians</h3>
+<p class="text-muted mb-4">One parent phone number can be linked to multiple children in the same family.</p>
+<div class="row g-3">
+{% for guardian in guardians %}
+<div class="col-lg-6"><div class="card sms-stat-card p-3 h-100">
+{% if request.user.role == "DEPUTY_PRINCIPAL" %}<h5>{{ guardian.first_name }} {{ guardian.last_name }}</h5><div class="text-muted">{{ guardian.relationship }} · {{ guardian.phone_number }}</div>{% else %}
+<form method="post" class="row g-2">{% csrf_token %}<input type="hidden" name="guardian_id" value="{{ guardian.pk }}"><div class="col-md-6"><input name="first_name" class="form-control" value="{{ guardian.first_name }}" required></div><div class="col-md-6"><input name="last_name" class="form-control" value="{{ guardian.last_name }}" required></div><div class="col-md-6"><input name="relationship" class="form-control" value="{{ guardian.relationship }}"></div><div class="col-md-6"><input name="phone_number" class="form-control" value="{{ guardian.phone_number }}" required></div><div class="col-md-8"><input name="email" type="email" class="form-control" value="{{ guardian.email }}" placeholder="Email"></div><div class="col-md-4"><button class="btn btn-primary w-100">Save</button></div></form>{% endif %}
+<div class="border-top mt-3 pt-2"><div class="small text-muted mb-1">Children</div><ul class="mb-0">{% for student in guardian.students.all %}<li>{{ student.user.get_full_name|default:student.user.username }} — {{ student.current_class|default:"No class" }}</li>{% empty %}<li class="text-muted">No children linked.</li>{% endfor %}</ul></div>
+</div></div>
+{% empty %}<div class="col-12 text-muted">No parents or guardians configured yet.</div>{% endfor %}
+</div>
+{% endblock %}

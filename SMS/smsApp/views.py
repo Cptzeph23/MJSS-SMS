@@ -61,6 +61,7 @@ from .models import (
     LeaveRequest,
     Notification,
     Payment,
+    Period,
     Program,
     Quiz,
     QuizAnswer,
@@ -76,6 +77,7 @@ from .models import (
     Stream,
     Student,
     StudentGuardian,
+    Room,
     Subject,
     School,
     TeachingAssignment,
@@ -2383,6 +2385,9 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
             "user", "department", "school"
         ).order_by("-created_at") if (school or self.request.user.is_superuser) else Staff.objects.none()
 
+        teacher_mode = self.request.GET.get("teachers") == "1"
+        if teacher_mode:
+            staff_qs = staff_qs.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
         search = self.request.GET.get("q", "").strip()
         if search:
             from django.db.models import Count, Q
@@ -2395,6 +2400,8 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
             "school": school, "staff_list": staff_qs, "search": search,
             "departments": Department.objects.filter(is_active=True) if self.request.user.is_superuser else (Department.objects.filter(school=school, is_active=True) if school else []),
             "schools": School.objects.filter(is_active=True) if self.request.user.is_superuser else [],
+            "teacher_mode": teacher_mode,
+            "active": "teachers" if teacher_mode else self.active_nav,
         })
         return context
 
@@ -2878,6 +2885,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 transport_period=request.POST.get("transport_period", "NONE"),
                 transport_route=request.POST.get("transport_route", ""),
                 takes_coding_robotics=request.POST.get("takes_coding_robotics") == "on",
+                parent_phone=request.POST.get("parent_phone", "").strip(),
                 registered_by=request.user, request=request,
             )
         except (ValueError, TypeError) as exc:
@@ -2891,8 +2899,8 @@ class AcademicAdminStudentImportTemplateView(AcademicAdminRequiredMixin, View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="student_import_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(["username", "first_name", "last_name", "email", "admission_number", "admission_date", "class_name", "status"])
-        writer.writerow(["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "Grade 1", "ACTIVE"])
+        writer.writerow(["username", "first_name", "last_name", "email", "admission_number", "admission_date", "class_name", "status", "parent_phone", "parent_first_name", "parent_last_name", "parent_relationship"])
+        writer.writerow(["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "Grade 1", "ACTIVE", "+254700000000", "Mary", "Doe", "Mother"])
         return response
 
 
@@ -2988,9 +2996,126 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
                     if row.get("status") in Student.Status.values:
                         student.status = row["status"]
                         student.save(update_fields=["status", "updated_at"])
+                    parent_phone = row.get("parent_phone", "")
+                    if parent_phone:
+                        guardian = Guardian.objects.filter(school=school, phone_number=parent_phone).first()
+                        if guardian is None:
+                            guardian = Guardian.objects.create(
+                                school=school,
+                                first_name=row.get("parent_first_name", "Parent") or "Parent",
+                                last_name=row.get("parent_last_name", "Guardian") or "Guardian",
+                                relationship=row.get("parent_relationship", "Parent/Guardian") or "Parent/Guardian",
+                                phone_number=parent_phone,
+                            )
+                        else:
+                            guardian.first_name = row.get("parent_first_name", "") or guardian.first_name
+                            guardian.last_name = row.get("parent_last_name", "") or guardian.last_name
+                            guardian.relationship = row.get("parent_relationship", "") or guardian.relationship
+                            guardian.save(update_fields=["first_name", "last_name", "relationship", "updated_at"])
+                        StudentGuardian.objects.get_or_create(
+                            student=student, guardian=guardian,
+                            defaults={"is_primary_contact": True, "is_billing_contact": True},
+                        )
             return redirect("dashboard:academic_admin_students")
         except (ValueError, TypeError, KeyError) as exc:
             return HttpResponseForbidden(str(exc))
+
+
+class PrincipalParentsView(AcademicAdminRequiredMixin, View):
+    template_name = "dashboard/academic_admin/parents.html"
+    active_nav = "parents"
+
+    def get(self, request):
+        school = self.get_school(request)
+        guardians = Guardian.objects.filter(school=school, is_active=True).prefetch_related("students__user", "students__current_class") if school else Guardian.objects.none()
+        return render(request, self.template_name, {"school": school, "guardians": guardians, "active": self.active_nav})
+
+    def post(self, request):
+        school = self.get_school(request)
+        guardian = get_object_or_404(Guardian, pk=request.POST.get("guardian_id"), school=school)
+        guardian.first_name = request.POST.get("first_name", "").strip()
+        guardian.last_name = request.POST.get("last_name", "").strip()
+        guardian.relationship = request.POST.get("relationship", "").strip()
+        guardian.phone_number = request.POST.get("phone_number", "").strip()
+        guardian.email = request.POST.get("email", "").strip()
+        guardian.save(update_fields=["first_name", "last_name", "relationship", "phone_number", "email", "updated_at"])
+        return redirect("dashboard:principal_parents")
+
+
+class PrincipalTimetableView(AcademicAdminRequiredMixin, View):
+    template_name = "dashboard/academic_admin/timetable.html"
+    active_nav = "timetable"
+
+    def get(self, request):
+        school = self.get_school(request)
+        periods = Period.objects.filter(school=school).order_by("order") if school else Period.objects.none()
+        assignments = TeachingAssignment.objects.filter(
+            class_subject__class_group__school=school, is_active=True
+        ).select_related("teacher__user", "class_subject__class_group", "class_subject__subject", "term") if school else TeachingAssignment.objects.none()
+        slots = TimetableSlot.objects.filter(
+            term__academic_year__school=school
+        ).select_related("period", "class_group", "teacher__user", "teaching_assignment__class_subject__subject", "term") if school else TimetableSlot.objects.none()
+        rooms = Room.objects.filter(school=school, is_active=True) if school else Room.objects.none()
+        return render(request, self.template_name, {
+            "school": school, "periods": periods, "assignments": assignments,
+            "slots": slots, "rooms": rooms, "day_choices": TimetableSlot.DayOfWeek.choices,
+            "active": self.active_nav,
+        })
+
+    def post(self, request):
+        school = self.get_school(request)
+        action = request.POST.get("action")
+        try:
+            if action == "generate_periods":
+                start = datetime.time.fromisoformat(request.POST.get("start_time"))
+                end = datetime.time.fromisoformat(request.POST.get("end_time"))
+                lesson_minutes = int(request.POST.get("lesson_minutes"))
+                break_count = int(request.POST.get("break_count") or 0)
+                break_minutes = int(request.POST.get("break_minutes") or 0)
+                if lesson_minutes <= 0 or break_count < 0 or break_minutes < 0:
+                    raise ValueError("Timetable durations must be positive.")
+                start_dt = datetime.datetime.combine(datetime.date.today(), start)
+                end_dt = datetime.datetime.combine(datetime.date.today(), end)
+                total_minutes = int((end_dt - start_dt).total_seconds() // 60)
+                lesson_count = total_minutes // lesson_minutes
+                if lesson_count < 1:
+                    raise ValueError("The school day is shorter than one lesson.")
+                interval = max(1, (lesson_count + break_count) // (break_count + 1))
+                cursor = start_dt
+                order = 1
+                lessons = breaks = 0
+                while cursor + datetime.timedelta(minutes=lesson_minutes) <= end_dt:
+                    lesson_end = cursor + datetime.timedelta(minutes=lesson_minutes)
+                    Period.objects.update_or_create(
+                        school=school, name=f"Period {lessons + 1}",
+                        defaults={"start_time": cursor.time(), "end_time": lesson_end.time(), "order": order, "is_break": False},
+                    )
+                    lessons += 1; order += 1; cursor = lesson_end
+                    if breaks < break_count and lessons % interval == 0 and cursor + datetime.timedelta(minutes=break_minutes) <= end_dt:
+                        break_end = cursor + datetime.timedelta(minutes=break_minutes)
+                        Period.objects.update_or_create(
+                            school=school, name=f"Break {breaks + 1}",
+                            defaults={"start_time": cursor.time(), "end_time": break_end.time(), "order": order, "is_break": True},
+                        )
+                        breaks += 1; order += 1; cursor = break_end
+            elif action == "add_slot":
+                assignment = get_object_or_404(
+                    TeachingAssignment, pk=request.POST.get("assignment_id"),
+                    class_subject__class_group__school=school, is_active=True,
+                )
+                period = get_object_or_404(Period, pk=request.POST.get("period_id"), school=school, is_break=False)
+                room = Room.objects.filter(pk=request.POST.get("room_id"), school=school).first() if request.POST.get("room_id") else None
+                TimetableSlot.objects.create(
+                    teaching_assignment=assignment, period=period, room=room,
+                    day_of_week=request.POST.get("day_of_week"),
+                )
+            else:
+                raise ValueError("Unsupported timetable action.")
+        except IntegrityError as exc:
+            return HttpResponseForbidden("Timetable clash: that teacher or class already has this day and period.")
+        except (ValueError, TypeError) as exc:
+            return HttpResponseForbidden(str(exc))
+        return redirect("dashboard:principal_timetable")
 
 
 class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):

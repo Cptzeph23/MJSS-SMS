@@ -8,13 +8,13 @@
 {% endblock %}
 
 {% block content %}
-<h3 class="mb-4">Staff</h3>
+<h3 class="mb-4">{% if teacher_mode %}Teachers{% else %}Staff{% endif %}</h3>
 
 {% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4">
-    <div class="text-muted small mb-2">Enroll Teacher / Staff</div>
+    <div class="text-muted small mb-2">{% if teacher_mode %}Enroll Teacher{% else %}Enroll Teacher / Staff{% endif %}</div>
     <form method="post" action="{% url 'dashboard:staff_admin_staff_create' %}" class="row g-2">
         {% csrf_token %}
-        <div class="col-md-2"><input type="text" name="username" class="form-control" placeholder="Username" required></div>
+        <div class="col-md-2"><input type="text" name="username" class="form-control" placeholder="System username" required></div>
         <div class="col-md-2"><input type="text" name="first_name" class="form-control" placeholder="First name"></div>
         <div class="col-md-2"><input type="text" name="last_name" class="form-control" placeholder="Last name"></div>
         <div class="col-md-2"><input type="email" name="email" class="form-control" placeholder="Email"></div>
@@ -30,7 +30,7 @@
         </div>
         <div class="col-md-3"><input type="date" name="date_hired" class="form-control"></div>
         <div class="col-md-3"><input type="password" name="password" class="form-control" placeholder="Password (optional — random if blank)"></div>
-        <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Create Staff</button></div>
+        <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">{% if teacher_mode %}Add Teacher{% else %}Create Staff{% endif %}</button></div>
     </form>
 </div>{% endif %}
 

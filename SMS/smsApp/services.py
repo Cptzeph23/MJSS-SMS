@@ -2457,7 +2457,7 @@ def register_student(
     current_stream=None,
     program=None,
     transport_option="NONE", transport_period="NONE", transport_route="", takes_coding_robotics=False,
-    registered_by: User,
+    parent_phone="", registered_by: User,
     request: HttpRequest | None = None,
 ):
     """Spec §7 'Student registration', 'Admission numbers'. Creates the
@@ -2488,6 +2488,19 @@ def register_student(
         transport_option=transport_option, transport_period=transport_period,
         transport_route=transport_route, takes_coding_robotics=takes_coding_robotics,
     )
+    if parent_phone:
+        from .models import Guardian, StudentGuardian
+        guardian = Guardian.objects.filter(school=school, phone_number=parent_phone.strip()).first()
+        if guardian is None:
+            guardian = Guardian.objects.create(
+                school=school, first_name="Parent", last_name=last_name or admission_number,
+                relationship="Parent/Guardian", phone_number=parent_phone.strip(),
+            )
+        StudentGuardian.objects.get_or_create(
+            student=student, guardian=guardian,
+            defaults={"is_primary_contact": True, "is_billing_contact": True},
+        )
+
     log_audit(
         actor=registered_by, action=AuditLog.Action.CREATE, request=request,
         target_model="Student", target_object_id=student.pk,

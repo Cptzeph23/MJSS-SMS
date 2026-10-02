@@ -3,6 +3,6 @@
 {% block breadcrumbs %}<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li><li class="breadcrumb-item active">Assessments</li>{% endblock %}
 {% block content %}
 <h3 class="mb-4">Assessment Marks</h3>
-<p class="text-muted">Assessment structures and exam instances are configured by the principal. Use <strong>Enter Marks</strong> after the physical assessment has been completed.</p>
+<p class="text-muted">Assessment structures and exam instances are configured by the principal/manager. Use <strong>Enter Marks</strong> after the physical assessment has been completed.</p>
 <div class="card sms-stat-card p-3"><h5>My mark-entry assessments</h5><table class="table table-hover align-middle"><thead><tr><th>Assessment</th><th>Class / Subject</th><th>Max marks</th><th>Status</th><th></th></tr></thead><tbody>{% for a in assessments %}<tr><td>{{ a.title }} <small class="text-muted">({{ a.component.assessment_type.name }})</small></td><td>{{ a.class_subject.class_group }} — {{ a.class_subject.subject.name }}</td><td>{{ a.component.max_marks }}</td><td>{{ a.get_workflow_status_display }}</td><td><a class="btn btn-sm btn-primary" href="{% url 'dashboard:teacher_marks_entry' a.pk %}">Enter Marks</a></td></tr>{% empty %}<tr><td colspan="5" class="text-muted">No assessment structures have generated mark-entry assessments for your classes yet.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

@@ -1,5 +1,8 @@
 <li class="nav-item"><a class="nav-link {% if active == 'overview' or active == 'finance_overview' or active == 'staff_overview' %}active{% endif %}" href="{% url 'dashboard:academic_admin_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
 <li class="nav-item"><a class="nav-link {% if active == 'students' %}active{% endif %}" href="{% url 'dashboard:academic_admin_students' %}"><i class="bi bi-people me-2"></i>Students</a></li>
+<li class="nav-item"><a class="nav-link {% if active == 'teachers' %}active{% endif %}" href="{% url 'dashboard:staff_admin_staff_list' %}?teachers=1"><i class="bi bi-person-video3 me-2"></i>Teachers</a></li>
+<li class="nav-item"><a class="nav-link {% if active == 'parents' %}active{% endif %}" href="{% url 'dashboard:principal_parents' %}"><i class="bi bi-people-fill me-2"></i>Parents</a></li>
+<li class="nav-item"><a class="nav-link {% if active == 'timetable' %}active{% endif %}" href="{% url 'dashboard:principal_timetable' %}"><i class="bi bi-calendar3 me-2"></i>Timetable</a></li>
 <li class="nav-item"><a class="nav-link {% if active == 'configuration' %}active{% endif %}" href="{% url 'dashboard:principal_configuration' %}"><i class="bi bi-sliders me-2"></i>Class &amp; Assessment Config</a></li>
 <li class="nav-item"><a class="nav-link {% if active == 'results' %}active{% endif %}" href="{% url 'dashboard:academic_admin_results_approval' %}"><i class="bi bi-check2-square me-2"></i>Result Approvals</a></li>
 <li class="nav-item"><a class="nav-link {% if active == 'attendance' %}active{% endif %}" href="{% url 'dashboard:academic_admin_attendance_correction' %}"><i class="bi bi-calendar-check me-2"></i>Attendance Correction</a></li>
