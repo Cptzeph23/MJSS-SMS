@@ -19,11 +19,15 @@
     <div class="col-md-6">
         <div class="card sms-stat-card p-3">
             <div class="text-muted small mb-2">Edit Profile</div>
-            <form method="post">
+            {% if request.user.role == "DEPUTY_PRINCIPAL" %}<div class="alert alert-secondary">Read-only view. Deputy Principals cannot edit staff records.</div>{% else %}<form method="post">
                 {% csrf_token %}
                 <div class="mb-2">
                     <label class="form-label small">Job Title</label>
                     <input type="text" name="job_title" class="form-control" value="{{ staff.job_title }}">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Salary</label>
+                    <input type="number" step="0.01" min="0" name="salary" class="form-control" value="{{ staff.salary }}">
                 </div>
                 <div class="mb-2">
                     <label class="form-label small">Emergency Contact Name</label>
@@ -34,10 +38,10 @@
                     <input type="text" name="emergency_contact_phone" class="form-control" value="{{ staff.emergency_contact_phone }}">
                 </div>
                 <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
-            </form>
+            </form>{% endif %}
         </div>
 
-        <div class="card sms-stat-card p-3 mt-3">
+        <div class="card sms-stat-card p-3 mt-3 {% if request.user.role == "DEPUTY_PRINCIPAL" %}d-none{% endif %}">
             <div class="text-muted small mb-2">Employment Status</div>
             {% if staff.is_active %}
                 <form method="post" class="d-flex gap-2">

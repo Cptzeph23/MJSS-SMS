@@ -1,4 +1,6 @@
 # Absolute path: SMS/smsApp/views.py
+import csv
+import io
 import datetime
 from decimal import Decimal
 
@@ -6,7 +8,7 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView as DjangoLoginView
 from django.core.exceptions import ValidationError
-from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse, FileResponse
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -2377,9 +2379,9 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
-        staff_qs = Staff.objects.filter(school=school).select_related(
-            "user", "department"
-        ).order_by("-created_at") if school else Staff.objects.none()
+        staff_qs = (Staff.objects.all() if self.request.user.is_superuser else Staff.objects.filter(school=school)).select_related(
+            "user", "department", "school"
+        ).order_by("-created_at") if (school or self.request.user.is_superuser) else Staff.objects.none()
 
         search = self.request.GET.get("q", "").strip()
         if search:
@@ -2391,7 +2393,8 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
 
         context.update({
             "school": school, "staff_list": staff_qs, "search": search,
-            "departments": Department.objects.filter(school=school, is_active=True) if school else [],
+            "departments": Department.objects.filter(is_active=True) if self.request.user.is_superuser else (Department.objects.filter(school=school, is_active=True) if school else []),
+            "schools": School.objects.filter(is_active=True) if self.request.user.is_superuser else [],
         })
         return context
 
@@ -2404,7 +2407,9 @@ class StaffAdminStaffCreateView(StaffAdminRequiredMixin, View):
     def post(self, request):
         from django.utils.crypto import get_random_string
 
-        school = self.get_school(request)
+        school = (get_object_or_404(School, pk=request.POST.get("school_id"))
+                  if request.user.is_superuser and request.POST.get("school_id")
+                  else self.get_school(request))
         username = request.POST.get("username", "").strip()
         if not username:
             return HttpResponseForbidden("Username is required.")
@@ -2421,6 +2426,7 @@ class StaffAdminStaffCreateView(StaffAdminRequiredMixin, View):
             department_id=request.POST.get("department_id") or None,
             job_title=request.POST.get("job_title", ""),
             date_hired=request.POST.get("date_hired") or datetime.date.today(),
+            salary=Decimal(request.POST.get("salary") or "0"),
         )
         return redirect("dashboard:staff_admin_staff_list")
 
@@ -2434,7 +2440,8 @@ class StaffAdminStaffDetailView(StaffAdminRequiredMixin, View):
 
     def get(self, request, staff_id):
         school = self.get_school(request)
-        staff = get_object_or_404(Staff, pk=staff_id, school=school)
+        staff = (get_object_or_404(Staff, pk=staff_id)
+                 if request.user.is_superuser else get_object_or_404(Staff, pk=staff_id, school=school))
         return render(request, self.template_name, {
             "staff": staff, "active": self.active_nav,
             "qualifications": staff.qualifications.all(),
@@ -2443,7 +2450,8 @@ class StaffAdminStaffDetailView(StaffAdminRequiredMixin, View):
 
     def post(self, request, staff_id):
         school = self.get_school(request)
-        staff = get_object_or_404(Staff, pk=staff_id, school=school)
+        staff = (get_object_or_404(Staff, pk=staff_id)
+                 if request.user.is_superuser else get_object_or_404(Staff, pk=staff_id, school=school))
         action = request.POST.get("action")
 
         if action == "deactivate":
@@ -2462,6 +2470,7 @@ class StaffAdminStaffDetailView(StaffAdminRequiredMixin, View):
             staff.emergency_contact_phone = request.POST.get(
                 "emergency_contact_phone", staff.emergency_contact_phone
             )
+            staff.salary = Decimal(request.POST.get("salary") or staff.salary or "0")
             staff.save()
         return redirect("dashboard:staff_admin_staff_detail", staff_id=staff.pk)
 
@@ -2874,6 +2883,114 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
         except (ValueError, TypeError) as exc:
             return HttpResponseForbidden(str(exc))
         return redirect("dashboard:academic_admin_students")
+
+
+class AcademicAdminStudentImportTemplateView(AcademicAdminRequiredMixin, View):
+    """Download the spreadsheet-compatible import template."""
+    def get(self, request):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="student_import_template.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["username", "first_name", "last_name", "email", "admission_number", "admission_date", "class_name", "status"])
+        writer.writerow(["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "Grade 1", "ACTIVE"])
+        return response
+
+
+class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
+    """Import existing students from XLSX, CSV, or text-based PDF tables.
+
+    Required columns are username, admission_number, admission_date, and
+    class_name. Existing admission numbers are updated; new rows create the
+    linked student login and place the student in the named class.
+    """
+    required_columns = {"username", "admission_number", "admission_date", "class_name"}
+
+    def get(self, request):
+        return redirect("dashboard:academic_admin_students")
+
+    def _rows_from_upload(self, uploaded):
+        name = uploaded.name.lower()
+        if name.endswith(".xlsx"):
+            try:
+                from openpyxl import load_workbook
+            except ImportError as exc:
+                raise ValueError("Excel import requires openpyxl. Install the project requirements first.") from exc
+            workbook = load_workbook(uploaded, read_only=True, data_only=True)
+            sheet = workbook.active
+            values = list(sheet.values)
+            if not values:
+                return []
+            headers = [str(value or "").strip().lower() for value in values[0]]
+            return [dict(zip(headers, row, strict=False)) for row in values[1:] if any(row)]
+        if name.endswith(".pdf"):
+            from pypdf import PdfReader
+            text = "\n".join(page.extract_text() or "" for page in PdfReader(uploaded).pages)
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            if not lines:
+                return []
+            delimiter = "\t" if "\t" in lines[0] else ","
+            headers = [part.strip().lower() for part in lines[0].split(delimiter)]
+            return [dict(zip(headers, line.split(delimiter), strict=False)) for line in lines[1:]]
+        uploaded.seek(0)
+        return list(csv.DictReader(io.TextIOWrapper(uploaded, encoding="utf-8-sig")))
+
+    def post(self, request):
+        school = self.get_school(request)
+        uploaded = request.FILES.get("student_file")
+        if school is None or uploaded is None:
+            return HttpResponseForbidden("Select a school and upload a CSV, XLSX, or text-based PDF file.")
+        try:
+            rows = self._rows_from_upload(uploaded)
+            if not rows:
+                raise ValueError("The uploaded document contains no student rows.")
+            headers = {str(key).strip().lower() for key in rows[0]}
+            missing = self.required_columns - headers
+            if missing:
+                raise ValueError("Missing required columns: " + ", ".join(sorted(missing)))
+            from django.utils.crypto import get_random_string
+            created = updated = 0
+            with transaction.atomic():
+                for line, raw in enumerate(rows, start=2):
+                    row = {str(key).strip().lower(): (str(value).strip() if value is not None else "") for key, value in raw.items()}
+                    admission_number = row.get("admission_number", "")
+                    username = row.get("username", "")
+                    class_name = row.get("class_name", "")
+                    if not admission_number or not username or not class_name:
+                        raise ValueError(f"Row {line}: username, admission_number, and class_name are required.")
+                    class_group = Class.objects.filter(school=school, name__iexact=class_name, is_active=True).first()
+                    if class_group is None:
+                        raise ValueError(f"Row {line}: class '{class_name}' was not found in this school.")
+                    try:
+                        admission_date = datetime.date.fromisoformat(row.get("admission_date", ""))
+                    except ValueError as exc:
+                        raise ValueError(f"Row {line}: admission_date must be YYYY-MM-DD.") from exc
+                    student = Student.objects.filter(school=school, admission_number=admission_number).select_related("user").first()
+                    if student is None:
+                        user = User.objects.filter(username=username).first()
+                        if user and hasattr(user, "student_profile"):
+                            raise ValueError(f"Row {line}: username already belongs to a student.")
+                        if user is None:
+                            user = User.objects.create_user(username=username, password=get_random_string(16), role=User.Role.STUDENT)
+                        elif user.role != User.Role.STUDENT:
+                            raise ValueError(f"Row {line}: username belongs to a non-student user.")
+                        student = Student.objects.create(user=user, school=school, admission_number=admission_number, admission_date=admission_date, current_class=class_group)
+                        created += 1
+                    else:
+                        updated += 1
+                        student.current_class = class_group
+                        student.admission_date = admission_date
+                        student.save(update_fields=["current_class", "admission_date", "updated_at"])
+                    user = student.user
+                    user.first_name = row.get("first_name", "")
+                    user.last_name = row.get("last_name", "")
+                    user.email = row.get("email", "")
+                    user.save(update_fields=["first_name", "last_name", "email", "updated_at"])
+                    if row.get("status") in Student.Status.values:
+                        student.status = row["status"]
+                        student.save(update_fields=["status", "updated_at"])
+            return redirect("dashboard:academic_admin_students")
+        except (ValueError, TypeError, KeyError) as exc:
+            return HttpResponseForbidden(str(exc))
 
 
 class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):

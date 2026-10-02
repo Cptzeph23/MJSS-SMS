@@ -2,6 +2,7 @@
 {% block title %}School Configuration — SMS{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li><li class="breadcrumb-item active">Class &amp; Assessment Configuration</li>{% endblock %}
 {% block content %}
+{% if request.user.role == "DEPUTY_PRINCIPAL" %}<div class="alert alert-secondary">Read-only access: configuration records can be viewed, but cannot be added or edited.</div>{% endif %}
 <style>
     .config-grid > [class*="col-"] { display: flex; }
     .config-card { width: 100%; min-height: 330px; height: 100%; display: flex; flex-direction: column; }

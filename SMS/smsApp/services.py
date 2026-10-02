@@ -9,6 +9,7 @@ Django views today and DRF API views later (§3 'API-first architecture').
 from __future__ import annotations
 
 import datetime
+import os
 from decimal import Decimal
 from typing import Any
 
@@ -2133,12 +2134,9 @@ def mark_attendance(
                 "recorded_by": taken_by.user,
             },
         )
-        if status in {
-            AttendanceRecord.Status.ABSENT,
-            AttendanceRecord.Status.LATE,
-            AttendanceRecord.Status.EXCUSED,
-        }:
-            for link in StudentGuardian.objects.filter(
+        # Every attendance outcome is useful to a guardian: present, late,
+        # absent, and excused all generate the same auditable notification path.
+        for link in StudentGuardian.objects.filter(
                 student_id=student_id, guardian__user__isnull=False
             ).select_related("guardian__user", "student"):
                 try:
@@ -2147,7 +2145,9 @@ def mark_attendance(
                         notification_type=Notification.NotificationType.ATTENDANCE,
                         title=f"Attendance update for {link.student}",
                         body=f"{link.student} was marked {record.get_status_display()} on {date}.",
-                        channels=["SMS"],
+                        channels=(
+                            ["SMS"] if os.getenv("SMS_ATTENDANCE_NOTIFICATIONS", "True").lower() in {"1", "true", "yes", "on"} else []
+                        ),
                         related_model="AttendanceRecord",
                         related_object_id=record.pk,
                         request=request,

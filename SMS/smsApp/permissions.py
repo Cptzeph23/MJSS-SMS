@@ -41,6 +41,12 @@ class RoleRequiredMixin(AccessMixin):
         if self.allowed_roles and request.user.role not in self.allowed_roles:
             raise PermissionDenied("You do not have access to this page.")
 
+        # Deputy Principal is a school-wide read-only role. Enforce this at
+        # the common authorization boundary so a hidden form or direct POST
+        # cannot mutate academic, finance, HR, attendance, or approval data.
+        if request.user.role == "DEPUTY_PRINCIPAL" and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            raise PermissionDenied("Deputy Principals have read-only access.")
+
         return super().dispatch(request, *args, **kwargs)
 
 

@@ -134,6 +134,8 @@ urlpatterns = [
     path("academic-admin/", views.AcademicAdminDashboardView.as_view(), name="academic_admin_dashboard"),
     path("academic-admin/configuration/", views.PrincipalConfigurationView.as_view(), name="principal_configuration"),
     path("academic-admin/students/", views.AcademicAdminStudentsView.as_view(), name="academic_admin_students"),
+    path("academic-admin/students/import/", views.AcademicAdminStudentImportView.as_view(), name="academic_admin_student_import"),
+    path("academic-admin/students/import-template/", views.AcademicAdminStudentImportTemplateView.as_view(), name="academic_admin_student_import_template"),
     path(
         "academic-admin/students/<int:student_id>/",
         views.AcademicAdminStudentDetailView.as_view(), name="academic_admin_student_detail",

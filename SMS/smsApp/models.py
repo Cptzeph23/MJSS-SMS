@@ -583,6 +583,10 @@ class Staff(models.Model):
         db_index=True,
     )
     date_hired = models.DateField()
+    salary = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Gross salary or agreed monthly salary amount.",
+    )
     date_left = models.DateField(blank=True, null=True)
     photo = models.ImageField(
         upload_to="staff/photos/", blank=True, null=True,
@@ -2760,7 +2764,7 @@ class NotificationPreference(models.Model):
     )
     in_app_enabled = models.BooleanField(default=True)
     email_enabled = models.BooleanField(default=True)
-    sms_enabled = models.BooleanField(default=False)
+    sms_enabled = models.BooleanField(default=True)
     push_enabled = models.BooleanField(default=False)
 
     class Meta:

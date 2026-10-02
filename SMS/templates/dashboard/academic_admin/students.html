@@ -10,7 +10,7 @@
 {% block content %}
 <h3 class="mb-4">Students</h3>
 
-<div class="card sms-stat-card p-3 mb-4">
+{% if request.user.role == "DEPUTY_PRINCIPAL" %}<div class="alert alert-secondary">Read-only access: student records can be viewed, but not added or changed.</div>{% else %}<div class="card sms-stat-card p-3 mb-4">
     <div class="text-muted small mb-2">Register Student</div>
     <form method="post" class="row g-2">
         {% csrf_token %}
@@ -33,7 +33,9 @@
         <div class="col-md-2 form-check mt-2"><input type="checkbox" name="takes_coding_robotics" class="form-check-input" id="coding"><label for="coding" class="form-check-label">Coding/robotics</label></div>
         <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Register</button></div>
     </form>
-</div>
+</div>{% endif %}
+
+{% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4"><div class="text-muted small mb-2">Import existing students</div><p class="small text-muted mb-2">Upload an XLSX, CSV, or text-based PDF. Required columns: <code>username</code>, <code>admission_number</code>, <code>admission_date</code> (YYYY-MM-DD), and <code>class_name</code>.</p><form method="post" action="{% url 'dashboard:academic_admin_student_import' %}" enctype="multipart/form-data" class="row g-2 align-items-center">{% csrf_token %}<div class="col-md-7"><input type="file" name="student_file" class="form-control" accept=".xlsx,.csv,.pdf" required></div><div class="col-md-3"><button class="btn btn-outline-primary w-100">Import students</button></div><div class="col-md-2"><a class="btn btn-outline-secondary w-100" href="{% url 'dashboard:academic_admin_student_import_template' %}">Download template</a></div></form></div>{% endif %}
 
 <form method="get" class="mb-3">
     <input type="text" name="q" class="form-control" style="max-width: 300px;" placeholder="Search admission # or name" value="{{ search }}">
