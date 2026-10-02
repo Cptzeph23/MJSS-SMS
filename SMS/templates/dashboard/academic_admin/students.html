@@ -29,7 +29,7 @@
         <div class="col-md-3"><input type="password" name="password" class="form-control" placeholder="Password (optional — random if blank)"></div>
         <div class="col-md-2"><select name="transport_option" class="form-select"><option value="NONE">No bus</option><option value="ONE_WAY">One way</option><option value="TWO_WAY">Two way</option></select></div>
         <div class="col-md-2"><select name="transport_period" class="form-select"><option value="NONE">No period</option><option value="MORNING">Morning</option><option value="EVENING">Evening</option><option value="BOTH">Both ways</option></select></div>
-        <div class="col-md-2"><input name="transport_route" class="form-control" placeholder="Bus route"></div>
+        <div class="col-md-2"><select name="transport_route" class="form-select"><option value="">Bus route (if using bus)</option>{% for route in transport_routes %}<option value="{{ route }}">{{ route }}</option>{% endfor %}</select></div>
         <div class="col-md-3"><input name="parent_phone" class="form-control" placeholder="Parent phone"></div>
         <div class="col-md-2 form-check mt-2"><input type="checkbox" name="takes_coding_robotics" class="form-check-input" id="coding"><label for="coding" class="form-check-label">Coding/robotics</label></div>
         <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Register</button></div>

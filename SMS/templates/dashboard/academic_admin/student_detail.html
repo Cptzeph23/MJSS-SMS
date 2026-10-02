@@ -32,6 +32,22 @@
         </div>
 
         <div class="card sms-stat-card p-3 mt-3">
+            <div class="text-muted small mb-2">Transport &amp; Optional Subjects</div>
+            {% if request.user.role == "DEPUTY_PRINCIPAL" %}
+                <p class="mb-0">Transport: {{ student.get_transport_option_display|default:student.transport_option }}{% if student.transport_route %} — {{ student.transport_route }}{% endif %}<br>Optional coding/robotics: {{ student.takes_coding_robotics|yesno:"Yes,No" }}</p>
+            {% else %}
+            <form method="post" class="row g-2">
+                {% csrf_token %}<input type="hidden" name="action" value="update_transport">
+                <div class="col-md-4"><label class="form-label">Bus fare</label><select name="transport_option" class="form-select"><option value="NONE" {% if student.transport_option == "NONE" %}selected{% endif %}>No bus</option><option value="ONE_WAY" {% if student.transport_option == "ONE_WAY" %}selected{% endif %}>One way</option><option value="TWO_WAY" {% if student.transport_option == "TWO_WAY" %}selected{% endif %}>Two way</option></select></div>
+                <div class="col-md-4"><label class="form-label">Bus schedule</label><select name="transport_period" class="form-select"><option value="NONE" {% if student.transport_period == "NONE" %}selected{% endif %}>Not applicable</option><option value="MORNING" {% if student.transport_period == "MORNING" %}selected{% endif %}>Morning</option><option value="EVENING" {% if student.transport_period == "EVENING" %}selected{% endif %}>Evening</option><option value="BOTH" {% if student.transport_period == "BOTH" %}selected{% endif %}>Both ways</option></select></div>
+                <div class="col-md-4"><label class="form-label">Route</label><select name="transport_route" class="form-select"><option value="">Select route</option>{% for route in transport_routes %}<option value="{{ route }}" {% if student.transport_route == route %}selected{% endif %}>{{ route }}</option>{% endfor %}</select></div>
+                <div class="col-12 form-check ms-2"><input type="checkbox" name="takes_coding_robotics" class="form-check-input" id="student-coding" {% if student.takes_coding_robotics %}checked{% endif %}><label for="student-coding" class="form-check-label">Takes coding/robotics (optional fee)</label></div>
+                <div class="col-12"><button class="btn btn-primary">Save finance options</button></div>
+            </form>
+            {% endif %}
+        </div>
+
+        <div class="card sms-stat-card p-3 mt-3">
             <div class="text-muted small mb-2">Guardian Information</div>
             <ul class="list-unstyled mb-0">
                 {% for sg in guardians %}

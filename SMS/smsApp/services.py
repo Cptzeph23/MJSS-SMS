@@ -897,20 +897,48 @@ def generate_transcript(
 
 
 def generate_fee_structure_pdf(*, structure, student=None, generated_by=None, request=None) -> bytes:
-    """Render a branded annual fee schedule, optionally personalized with extras."""
+    """Render the fee structure, filtering optional charges for a student."""
     from django.template.loader import render_to_string
     from weasyprint import HTML
     school = structure.school
-    items = list(structure.items.select_related("category"))
-    extras = []
-    if student is not None and student.takes_coding_robotics:
-        extras.extend([row for row in items if "coding" in row.display_particulars.lower() or "robotic" in row.display_particulars.lower()])
-    if student is not None and student.transport_option != "NONE":
-        for option in structure.transport_options.all():
-            if not student.transport_route or option.route_name.lower() == student.transport_route.lower():
-                amount = option.two_way_amount if student.transport_option == "TWO_WAY" else option.one_way_amount
-                extras.append({"particulars": f"Transport - {option.route_name} ({student.get_transport_option_display()}, {student.get_transport_period_display()})", "term_1_amount": amount, "term_2_amount": amount, "term_3_amount": amount})
-    html = render_to_string("reports/fee_structure.html", {"school": school, "school_logo": _school_logo_data_uri(school), "structure": structure, "items": items, "extras": extras, "student": student})
+    structure_items = list(structure.items.select_related("category"))
+    tuition_items = [item for item in structure_items if item.section == item.Section.TUITION]
+    optional_items = [item for item in structure_items if item.section == item.Section.OPTIONAL]
+    if student is not None and not student.takes_coding_robotics:
+        optional_items = []
+
+    transport_rows = []
+    for option in structure.transport_options.all():
+        if student is not None:
+            if student.transport_option == "NONE" or not student.transport_route:
+                continue
+            if option.route_name.strip().casefold() != student.transport_route.strip().casefold():
+                continue
+            amount = option.two_way_amount if student.transport_option == "TWO_WAY" else option.one_way_amount
+            label = f"{option.route_name} ({student.get_transport_option_display()}, {student.get_transport_period_display()})"
+            transport_rows.append({"particulars": label, "term_1_amount": amount, "term_2_amount": amount, "term_3_amount": amount})
+        else:
+            transport_rows.append({"particulars": option.route_name, "term_1_amount": option.one_way_amount, "term_2_amount": option.one_way_amount, "term_3_amount": option.one_way_amount, "two_way_amount": option.two_way_amount})
+
+    fields = ("term_1_amount", "term_2_amount", "term_3_amount")
+    tuition_term_totals = [sum((getattr(item, field) for item in tuition_items), Decimal("0")) for field in fields]
+    optional_term_totals = [sum((getattr(item, field) for item in optional_items), Decimal("0")) for field in fields]
+    transport_term_totals = [sum((row[field] for row in transport_rows), Decimal("0")) for field in fields]
+    included_optional = optional_items if student is not None else []
+    term_totals = [
+        tuition_term_totals[index] + (optional_term_totals[index] if student is not None else Decimal("0"))
+        + (transport_term_totals[index] if student is not None else Decimal("0"))
+        for index in range(3)
+    ]
+    html = render_to_string("reports/fee_structure.html", {
+        "school": school, "school_logo": _school_logo_data_uri(school),
+        "structure": structure, "items": tuition_items,
+        "optional_items": optional_items, "transport_rows": transport_rows,
+        "tuition_term_totals": tuition_term_totals,
+        "optional_term_totals": optional_term_totals,
+        "transport_term_totals": transport_term_totals,
+        "term_totals": term_totals, "student": student,
+    })
     return HTML(string=html).write_pdf()
 
 
@@ -1480,17 +1508,14 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
     annual = [structure for structure in structures if structure.term_id is None]
     selected = annual[:1] or structures
     items = []
-    total = Decimal("0")
+    term_totals = [Decimal("0"), Decimal("0"), Decimal("0")]
     for structure in selected:
         for item in structure.items.all():
-            label = f"{item.particulars or item.category.name}".lower()
-            if ("coding" in label or "robotic" in label) and not student.takes_coding_robotics:
+            if item.section == item.Section.OPTIONAL and not student.takes_coding_robotics:
                 continue
-            if "transport" in label or "bus" in label:
-                continue
-            amount = item.term_1_amount + item.term_2_amount + item.term_3_amount
-            total += amount
-            items.append({"structure": structure, "item": item, "amount": amount})
+            amounts = [item.term_1_amount, item.term_2_amount, item.term_3_amount]
+            term_totals = [current + amount for current, amount in zip(term_totals, amounts, strict=True)]
+            items.append({"structure": structure, "item": item, "amount": sum(amounts, Decimal("0"))})
 
     transport = None
     if student.transport_option != "NONE" and student.transport_route:
@@ -1504,7 +1529,9 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
                 break
         if transport:
             amount = transport.two_way_amount if student.transport_option == "TWO_WAY" else transport.one_way_amount
-            total += amount
+            term_totals = [current + amount for current in term_totals]
+
+    total = sum(term_totals, Decimal("0"))
 
     return {
         "structure": selected[0] if len(selected) == 1 else None,
@@ -1512,6 +1539,7 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
         "total": total,
         "items": items,
         "transport": transport,
+        "term_totals": term_totals,
     }
 
 

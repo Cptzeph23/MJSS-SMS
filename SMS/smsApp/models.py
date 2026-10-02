@@ -2022,6 +2022,10 @@ class FeeStructure(models.Model):
 
 
 class FeeStructureItem(models.Model):
+    class Section(models.TextChoices):
+        TUITION = "TUITION", "Tuition"
+        OPTIONAL = "OPTIONAL", "Optional subjects"
+
     structure = models.ForeignKey(
         FeeStructure, on_delete=models.CASCADE, related_name="items"
     )
@@ -2029,6 +2033,9 @@ class FeeStructureItem(models.Model):
         FeeCategory, on_delete=models.PROTECT, related_name="structure_items"
     )
     particulars = models.CharField(max_length=150, blank=True)
+    section = models.CharField(
+        max_length=10, choices=Section.choices, default=Section.TUITION, db_index=True
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     term_1_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
     term_2_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))

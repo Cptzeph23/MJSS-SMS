@@ -1,1 +1,71 @@
-<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:1.5cm}body{font:11px Arial;color:#222;background-image:url("{{ school_logo }}");background-repeat:no-repeat;background-position:center;background-size:55%;}.head{text-align:center}.head img{position:absolute;left:0;top:0;width:70px}.head h1{margin:0;font-size:20px}.motto{font-style:italic}.title{text-align:center;margin:20px 0 8px}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #aaa;padding:6px}th{background:#eee}.right{text-align:right}.footer{position:fixed;bottom:0;width:100%;text-align:center;border-top:1px solid #aaa;padding-top:6px;font-size:9px}</style></head><body><div class="head">{% if school_logo %}<img src="{{ school_logo }}">{% endif %}<h1>{{ school.name }}</h1>{% if school.motto %}<div class="motto">{{ school.motto }}</div>{% endif %}<div>{{ school.address }}</div></div><h2 class="title">{{ structure.name }}</h2>{% if student %}<p><b>Student:</b> {{ student.user.get_full_name|default:student.user.username }} &nbsp; <b>Admission:</b> {{ student.admission_number }}</p>{% endif %}<p><b>M-PESA PAYBILL No.:</b> {{ structure.paybill_number|default:"—" }} &nbsp; <b>Account No.:</b> {{ structure.account_number|default:"—" }}#Student Name</p><table><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr>{% for i in items %}<tr><td>{{ i.display_particulars }}</td><td class="right">{{ i.term_1_amount|default:i.amount }}</td><td class="right">{{ i.term_2_amount|default:i.amount }}</td><td class="right">{{ i.term_3_amount|default:i.amount }}</td></tr>{% endfor %}</table>{% if extras %}<h3>Optional additional charges</h3><table><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr>{% for i in extras %}<tr><td>{{ i.particulars|default:i.display_particulars }}</td><td class="right">{{ i.term_1_amount }}</td><td class="right">{{ i.term_2_amount }}</td><td class="right">{{ i.term_3_amount }}</td></tr>{% endfor %}</table>{% endif %}<div class="footer">{{ school.phone_number }} · {{ school.email }}{% if school.website %} · {{ school.website }}{% endif %}</div></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4; margin: 1.5cm; }
+    body { font: 11px Arial, sans-serif; color: #222; background-image: url("{{ school_logo }}"); background-repeat: no-repeat; background-position: center; background-size: 55%; }
+    .head { text-align: center; position: relative; min-height: 64px; }
+    .head img { position: absolute; left: 0; top: 0; width: 70px; }
+    .head h1 { margin: 0; font-size: 20px; }
+    .motto { font-style: italic; }
+    .title { text-align: center; margin: 20px 0 8px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 18px; }
+    th, td { border: 1px solid #aaa; padding: 6px; }
+    th { background: #eee; }
+    .right { text-align: right; }
+    .section-title { margin: 18px 0 4px; }
+    .footer { position: fixed; bottom: 0; width: 100%; text-align: center; border-top: 1px solid #aaa; padding-top: 6px; font-size: 9px; }
+  </style>
+</head>
+<body>
+  <div class="head">
+    {% if school_logo %}<img src="{{ school_logo }}" alt="School logo">{% endif %}
+    <h1>{{ school.name }}</h1>
+    {% if school.motto %}<div class="motto">{{ school.motto }}</div>{% endif %}
+    <div>{{ school.address }}</div>
+  </div>
+  <h2 class="title">{{ structure.name }}</h2>
+  {% if student %}<p><b>Student:</b> {{ student.user.get_full_name|default:student.user.username }} &nbsp; <b>Admission:</b> {{ student.admission_number }} &nbsp; <b>Class:</b> {{ student.current_class.name }}</p>{% endif %}
+  <p><b>M-PESA PAYBILL No.:</b> {{ structure.paybill_number|default:"—" }} &nbsp; <b>Account No.:</b> {{ structure.account_number|default:"—" }}#Student Name</p>
+
+  <h3 class="section-title">Tuition</h3>
+  <table>
+    <thead><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
+    <tbody>
+      {% for item in items %}<tr><td>{{ item.display_particulars }}</td><td class="right">{{ item.term_1_amount }}</td><td class="right">{{ item.term_2_amount }}</td><td class="right">{{ item.term_3_amount }}</td></tr>{% endfor %}
+      {% if student %}<tr><th>Tuition total</th>{% for total in tuition_term_totals %}<th class="right">{{ total }}</th>{% endfor %}</tr>{% endif %}
+    </tbody>
+  </table>
+
+  {% if optional_items %}
+    <h3 class="section-title">Optional subjects{% if student %} — selected{% endif %}</h3>
+    <table>
+      <thead><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
+      <tbody>
+        {% for item in optional_items %}<tr><td>{{ item.display_particulars }}</td><td class="right">{{ item.term_1_amount }}</td><td class="right">{{ item.term_2_amount }}</td><td class="right">{{ item.term_3_amount }}</td></tr>{% endfor %}
+        {% if student %}<tr><th>Optional subjects total</th>{% for total in optional_term_totals %}<th class="right">{{ total }}</th>{% endfor %}</tr>{% endif %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if student %}
+    {% if transport_rows %}
+      <h3 class="section-title">Transport — {{ student.transport_route }}</h3>
+      <table>
+        <thead><tr><th>Route / option</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
+        <tbody>{% for row in transport_rows %}<tr><td>{{ row.particulars }}</td><td class="right">{{ row.term_1_amount }}</td><td class="right">{{ row.term_2_amount }}</td><td class="right">{{ row.term_3_amount }}</td></tr>{% endfor %}<tr><th>Transport total</th>{% for total in transport_term_totals %}<th class="right">{{ total }}</th>{% endfor %}</tr></tbody>
+      </table>
+    {% endif %}
+    <table><tbody><tr><th>Overall total per term</th>{% for total in term_totals %}<th class="right">{{ total }}</th>{% endfor %}</tr></tbody></table>
+  {% elif transport_rows %}
+    <h3 class="section-title">Transport routes (per term)</h3>
+    <table>
+      <thead><tr><th>Route</th><th>One way</th><th>Two way</th></tr></thead>
+      <tbody>{% for row in transport_rows %}<tr><td>{{ row.particulars }}</td><td class="right">{{ row.term_1_amount }}</td><td class="right">{{ row.two_way_amount }}</td></tr>{% endfor %}</tbody>
+    </table>
+  {% endif %}
+
+  <div class="footer">{{ school.phone_number }} · {{ school.email }}{% if school.website %} · {{ school.website }}{% endif %}</div>
+</body>
+</html>

@@ -21,11 +21,12 @@
 <div class="col-md-3"><label class="form-label">M-PESA Paybill</label><input name="paybill_number" class="form-control"></div>
 <div class="col-md-3"><label class="form-label">Account No.</label><input name="account_number" class="form-control"></div>
 
-<div class="col-12"><h6>Main particulars</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Particular</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th></th></tr></thead><tbody id="particular-rows">
+<div class="col-12"><h6>1. Tuition</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Particular</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th></th></tr></thead><tbody id="particular-rows">
 {% for p in default_particulars %}<tr class="particular-row"><td><input name="particulars" value="{{ p }}" class="form-control"></td><td><input name="term_1_amount" type="number" min="0" step="0.01" class="form-control"></td><td><input name="term_2_amount" type="number" min="0" step="0.01" class="form-control"></td><td><input name="term_3_amount" type="number" min="0" step="0.01" class="form-control"></td><td><button type="button" class="btn btn-sm btn-outline-danger remove-particular" title="Remove">&times;</button></td></tr>{% endfor %}
 </tbody></table></div><button type="button" id="add-particular" class="btn btn-sm btn-outline-secondary mt-2">+ Add another particular</button></div>
 
-<div class="col-12"><h6>Transport routes</h6><div id="transport-rows"><div class="row g-2 transport-row mb-2"><div class="col-md-4"><input name="route_name" class="form-control" placeholder="Route name"></div><div class="col-md-3"><input name="one_way_amount" type="number" min="0" step="0.01" class="form-control" placeholder="One-way cost"></div><div class="col-md-3"><input name="two_way_amount" type="number" min="0" step="0.01" class="form-control" placeholder="Two-way cost"></div><div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-transport">Remove</button></div></div></div><button type="button" id="add-transport" class="btn btn-sm btn-outline-secondary">+ Add another route</button></div>
+<div class="col-12"><h6>2. Optional subjects</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Particular</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th></th></tr></thead><tbody id="optional-particular-rows">{% for p in default_optional_particulars %}<tr class="optional-particular-row"><td><input name="optional_particulars" value="{{ p }}" class="form-control"></td><td><input name="optional_term_1_amount" type="number" min="0" step="0.01" class="form-control"></td><td><input name="optional_term_2_amount" type="number" min="0" step="0.01" class="form-control"></td><td><input name="optional_term_3_amount" type="number" min="0" step="0.01" class="form-control"></td><td><button type="button" class="btn btn-sm btn-outline-danger remove-optional-particular">Remove</button></td></tr>{% endfor %}</tbody></table></div><button type="button" id="add-optional-particular" class="btn btn-sm btn-outline-secondary">+ Add optional subject</button></div>
+<div class="col-12"><h6>3. Transport routes</h6><div id="transport-rows"><div class="row g-2 transport-row mb-2"><div class="col-md-4"><input name="route_name" class="form-control" placeholder="Route name"></div><div class="col-md-3"><input name="one_way_amount" type="number" min="0" step="0.01" class="form-control" placeholder="One-way cost"></div><div class="col-md-3"><input name="two_way_amount" type="number" min="0" step="0.01" class="form-control" placeholder="Two-way cost"></div><div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-transport">Remove</button></div></div></div><button type="button" id="add-transport" class="btn btn-sm btn-outline-secondary">+ Add another route</button></div>
 <div class="col-12"><button class="btn btn-primary">Save fee structure</button></div>
 </form></div>{% endif %}
 <div class="card sms-stat-card p-3"><h5>Existing structures</h5><table class="table table-hover"><thead><tr><th>Name</th><th>Classes</th><th>Year</th><th>Payment</th><th></th></tr></thead><tbody>{% for s in structures %}<tr><td>{{ s.name }}</td><td>{% for c in s.class_groups.all %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</td><td>{{ s.academic_year.name }}</td><td>{{ s.paybill_number }} / {{ s.account_number }}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'dashboard:finance_fee_structure_pdf' s.pk %}">PDF</a> <a class="btn btn-sm btn-outline-secondary" href="?edit={{ s.pk }}">Edit</a></td></tr>{% empty %}<tr><td colspan="5">No fee structures have been created.</td></tr>{% endfor %}</tbody></table></div>
@@ -34,24 +35,35 @@
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const particularRows = document.getElementById("particular-rows");
-    document.getElementById("add-particular").addEventListener("click", function () {
+    if (particularRows) document.getElementById("add-particular").addEventListener("click", function () {
         const row = particularRows.querySelector(".particular-row").cloneNode(true);
         row.querySelectorAll("input").forEach(input => { input.value = ""; });
         particularRows.appendChild(row);
     });
-    particularRows.addEventListener("click", function (event) {
+    if (particularRows) particularRows.addEventListener("click", function (event) {
         if (event.target.classList.contains("remove-particular") && particularRows.querySelectorAll(".particular-row").length > 1) event.target.closest(".particular-row").remove();
     });
+    const optionalRows = document.getElementById("optional-particular-rows");
+    if (optionalRows) {
+        document.getElementById("add-optional-particular").addEventListener("click", function () {
+            const row = optionalRows.querySelector(".optional-particular-row").cloneNode(true);
+            row.querySelectorAll("input").forEach(input => { input.value = ""; });
+            optionalRows.appendChild(row);
+        });
+        optionalRows.addEventListener("click", function (event) {
+            if (event.target.classList.contains("remove-optional-particular") && optionalRows.querySelectorAll(".optional-particular-row").length > 1) event.target.closest(".optional-particular-row").remove();
+        });
+    }
     const transportRows = document.getElementById("transport-rows");
-    document.getElementById("add-transport").addEventListener("click", function () {
+    if (transportRows) document.getElementById("add-transport").addEventListener("click", function () {
         const row = transportRows.querySelector(".transport-row").cloneNode(true);
         row.querySelectorAll("input").forEach(input => { input.value = ""; });
         transportRows.appendChild(row);
     });
-    transportRows.addEventListener("click", function (event) {
+    if (transportRows) transportRows.addEventListener("click", function (event) {
         if (event.target.classList.contains("remove-transport") && transportRows.querySelectorAll(".transport-row").length > 1) event.target.closest(".transport-row").remove();
     });
-    document.getElementById("class-search").addEventListener("input", function () {
+    if (document.getElementById("class-search")) document.getElementById("class-search").addEventListener("input", function () {
         const query = this.value.toLowerCase().trim();
         document.querySelectorAll(".class-option").forEach(option => { option.style.display = option.dataset.className.includes(query) ? "block" : "none"; });
     });

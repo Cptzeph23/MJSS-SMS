@@ -2079,7 +2079,8 @@ class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
             "terms": Term.objects.filter(academic_year__school=school) if school else [],
             "classes": Class.objects.filter(school=school, is_active=True).select_related("program") if school else [],
             "categories": FeeCategory.objects.filter(school=school, is_active=True) if school else [],
-            "default_particulars": ["Admission", "Student ID", "Tuition", "Meals", "Caution", "Activity fee", "Medical fee", "Coding and Robotics"],
+            "default_particulars": ["Admission", "Student ID", "Tuition", "Meals", "Caution", "Activity fee", "Medical fee"],
+            "default_optional_particulars": ["Coding and Robotics"],
         })
         return context
 
@@ -2105,9 +2106,10 @@ class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
                 item = get_object_or_404(FeeStructureItem, pk=item_id, structure=structure)
                 vals = [Decimal(t1 or "0"), Decimal(t2 or "0"), Decimal(t3 or "0")]
                 item.particulars = particulars.strip()
+                item.section = request.POST.get(f"item_section_{item_id}", FeeStructureItem.Section.TUITION)
                 item.term_1_amount, item.term_2_amount, item.term_3_amount = vals
                 item.amount = sum(vals)
-                item.save(update_fields=["particulars", "term_1_amount", "term_2_amount", "term_3_amount", "amount"])
+                item.save(update_fields=["particulars", "section", "term_1_amount", "term_2_amount", "term_3_amount", "amount"])
             for route_id, route, one, two in zip(
                 request.POST.getlist("route_id"), request.POST.getlist("edit_route_name"),
                 request.POST.getlist("edit_one_way_amount"), request.POST.getlist("edit_two_way_amount"), strict=False,
@@ -2137,14 +2139,33 @@ class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
                 old_category = get_object_or_404(FeeCategory, pk=request.POST.get("category_id"), school=school, is_active=True)
                 old_amount = Decimal(request.POST.get("amount"))
                 FeeStructureItem.objects.create(structure=structure, category=old_category, particulars=old_category.name, amount=old_amount)
-            rows = zip(request.POST.getlist("particulars"), request.POST.getlist("term_1_amount"), request.POST.getlist("term_2_amount"), request.POST.getlist("term_3_amount"), strict=False)
-            for particulars, t1, t2, t3 in rows:
-                particulars = particulars.strip()
-                if not particulars or not any((t1, t2, t3)):
-                    continue
-                vals = [Decimal(v or "0") for v in (t1, t2, t3)]
-                row_category, _ = FeeCategory.objects.get_or_create(school=school, code=("P_" + "_".join(particulars.upper().split()))[:20], defaults={"name": particulars})
-                FeeStructureItem.objects.create(structure=structure, category=row_category, particulars=particulars, amount=sum(vals), term_1_amount=vals[0], term_2_amount=vals[1], term_3_amount=vals[2], is_mandatory=True)
+            for section, prefix in (
+                (FeeStructureItem.Section.TUITION, ""),
+                (FeeStructureItem.Section.OPTIONAL, "optional_"),
+            ):
+                rows = zip(
+                    request.POST.getlist(f"{prefix}particulars"),
+                    request.POST.getlist(f"{prefix}term_1_amount"),
+                    request.POST.getlist(f"{prefix}term_2_amount"),
+                    request.POST.getlist(f"{prefix}term_3_amount"), strict=False,
+                )
+                for particulars, t1, t2, t3 in rows:
+                    particulars = particulars.strip()
+                    if not particulars:
+                        continue
+                    vals = [Decimal(v or "0") for v in (t1, t2, t3)]
+                    if not any(vals):
+                        continue
+                    code = ("P_" + "_".join(particulars.upper().split()))[:20]
+                    row_category, _ = FeeCategory.objects.get_or_create(
+                        school=school, code=code, defaults={"name": particulars}
+                    )
+                    FeeStructureItem.objects.create(
+                        structure=structure, category=row_category, particulars=particulars,
+                        section=section, amount=sum(vals), term_1_amount=vals[0],
+                        term_2_amount=vals[1], term_3_amount=vals[2],
+                        is_mandatory=(section == FeeStructureItem.Section.TUITION),
+                    )
             for route, one, two in zip(request.POST.getlist("route_name"), request.POST.getlist("one_way_amount"), request.POST.getlist("two_way_amount"), strict=False):
                 if route.strip() and (one or two):
                     FeeStructureTransport.objects.create(structure=structure, route_name=route.strip(), one_way_amount=Decimal(one or "0"), two_way_amount=Decimal(two or "0"))
@@ -2899,6 +2920,10 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
         context.update({
             "school": school, "students": students_qs, "search": search,
             "classes": Class.objects.filter(school=school, is_active=True) if school else [],
+            "transport_routes": FeeStructureTransport.objects.filter(
+                structure__school=school, structure__academic_year__is_current=True,
+                structure__is_active=True,
+            ).values_list("route_name", flat=True).distinct().order_by("route_name") if school else [],
         })
         return context
 
@@ -2907,6 +2932,25 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
             return HttpResponseForbidden("Deputy Principals cannot register students.")
         school = self.get_school(request)
         try:
+            transport_option = request.POST.get("transport_option", "NONE")
+            transport_period = request.POST.get("transport_period", "NONE")
+            transport_route = request.POST.get("transport_route", "").strip()
+            if transport_option not in {"NONE", "ONE_WAY", "TWO_WAY"}:
+                return HttpResponseForbidden("Select a valid transport option.")
+            if transport_option != "NONE":
+                current_class = Class.objects.filter(
+                    pk=request.POST.get("current_class_id"), school=school, is_active=True,
+                ).first()
+                if transport_period not in {"MORNING", "EVENING", "BOTH"} or not current_class:
+                    return HttpResponseForbidden("Select a class and bus schedule for transport.")
+                route_exists = FeeStructureTransport.objects.filter(
+                    structure__school=school, structure__academic_year__is_current=True,
+                    structure__is_active=True, route_name__iexact=transport_route,
+                ).filter(Q(structure__class_groups=current_class) | Q(structure__class_group=current_class)).exists()
+                if not route_exists:
+                    return HttpResponseForbidden("Select a route configured for the student's class.")
+            else:
+                transport_period, transport_route = "NONE", ""
             register_student(
                 school=school, username=request.POST.get("username", "").strip(),
                 password=request.POST.get("password") or None,
@@ -2919,9 +2963,9 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                     Class.objects.filter(pk=request.POST.get("current_class_id"), school=school).first()
                     if request.POST.get("current_class_id") else None
                 ),
-                transport_option=request.POST.get("transport_option", "NONE"),
-                transport_period=request.POST.get("transport_period", "NONE"),
-                transport_route=request.POST.get("transport_route", ""),
+                transport_option=transport_option,
+                transport_period=transport_period,
+                transport_route=transport_route if transport_option != "NONE" else "",
                 takes_coding_robotics=request.POST.get("takes_coding_robotics") == "on",
                 parent_phone=request.POST.get("parent_phone", "").strip(),
                 registered_by=request.user, request=request,
@@ -3173,10 +3217,17 @@ class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):
         enrollments = Enrollment.objects.filter(student=student).select_related(
             "class_subject__subject", "academic_year"
         )
+        current_fee_structures = FeeStructure.objects.filter(
+            school=school, academic_year__is_current=True, is_active=True,
+        ).filter(Q(class_groups=student.current_class) | Q(class_group=student.current_class)).distinct()
+        transport_routes = FeeStructureTransport.objects.filter(
+            structure__in=current_fee_structures
+        ).values_list("route_name", flat=True).distinct().order_by("route_name")
         return render(request, self.template_name, {
             "student": student, "active": self.active_nav,
             "guardians": guardians, "enrollments": enrollments,
             "status_choices": Student.Status.choices,
+            "transport_routes": transport_routes,
         })
 
     def post(self, request, student_id):
@@ -3184,6 +3235,40 @@ class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):
             return HttpResponseForbidden("Deputy Principals cannot change student status.")
         school = self.get_school(request)
         student = get_object_or_404(Student, pk=student_id, school=school)
+        if request.POST.get("action") == "update_transport":
+            transport_option = request.POST.get("transport_option", "NONE")
+            transport_period = request.POST.get("transport_period", "NONE")
+            transport_route = request.POST.get("transport_route", "").strip()
+            if transport_option not in {"NONE", "ONE_WAY", "TWO_WAY"}:
+                return HttpResponseForbidden("Select a valid transport option.")
+            if transport_period not in {"NONE", "MORNING", "EVENING", "BOTH"}:
+                return HttpResponseForbidden("Select a valid transport period.")
+            if transport_option == "NONE":
+                transport_period, transport_route = "NONE", ""
+            elif not transport_route:
+                return HttpResponseForbidden("Select a transport route.")
+            else:
+                current_fee_structures = FeeStructure.objects.filter(
+                    school=school, academic_year__is_current=True, is_active=True,
+                ).filter(Q(class_groups=student.current_class) | Q(class_group=student.current_class))
+                if not FeeStructureTransport.objects.filter(
+                    structure__in=current_fee_structures, route_name__iexact=transport_route,
+                ).exists():
+                    return HttpResponseForbidden("Select a route configured for the student's class.")
+            student.transport_option = transport_option
+            student.transport_period = transport_period
+            student.transport_route = transport_route
+            student.takes_coding_robotics = request.POST.get("takes_coding_robotics") == "on"
+            student.save(update_fields=[
+                "transport_option", "transport_period", "transport_route",
+                "takes_coding_robotics", "updated_at",
+            ])
+            log_audit(
+                actor=request.user, action=AuditLog.Action.UPDATE, request=request,
+                target_model="Student", target_object_id=student.pk,
+                description=f"Updated optional finance selections for {student}",
+            )
+            return redirect("dashboard:academic_admin_student_detail", student_id=student.pk)
         try:
             change_student_status(
                 student=student, new_status=request.POST.get("status"),
