@@ -65,7 +65,7 @@
         {% for p in recent_payments %}
             <tr>
                 <td>{{ p.payment_number }}</td>
-                <td>{{ p.invoice.student.admission_number }} — {{ p.invoice.student.user.get_full_name|default:p.invoice.student.user.username }}</td>
+                <td>{% if p.invoice_id %}{{ p.invoice.student.admission_number }} — {{ p.invoice.student.user.get_full_name|default:p.invoice.student.user.username }}{% else %}Family: {{ p.family_guardian.first_name }} {{ p.family_guardian.last_name }}{% for allocation in p.allocations.all %}<div class="small text-muted">{{ allocation.invoice.student.admission_number }} · Ksh {{ allocation.amount }}</div>{% endfor %}{% endif %}</td>
                 <td>Ksh {{ p.amount }}</td>
                 <td>{{ p.get_payment_method_display }}</td>
                 <td>{{ p.payment_date }}</td>

@@ -1309,7 +1309,7 @@ def generate_invoice_for_student(
     silently drift if the fee structure or concessions change later."""
     from django.utils import timezone
 
-    from .models import FeeConcession, Invoice, InvoiceLineItem
+    from .models import FeeConcession, FeeStructureTransport, Invoice, InvoiceLineItem
 
     invoice = Invoice.objects.create(
         student=student, school=student.school, academic_year=academic_year,
@@ -1318,13 +1318,38 @@ def generate_invoice_for_student(
     )
 
     total = Decimal("0")
+    term_number = term.term_number if term else None
+    term_field = f"term_{term_number}_amount" if term_number in (1, 2, 3) else None
     for item in fee_structure.items.all():
+        if item.section == item.Section.OPTIONAL and not student.takes_coding_robotics:
+            continue
+        item_amount = getattr(item, term_field) if term_field else item.amount
+        # Older one-value fee rows predate the three per-term amount fields.
+        if (item_amount == 0 and item.amount > 0
+                and not any((item.term_1_amount, item.term_2_amount, item.term_3_amount))):
+            item_amount = item.amount
+        if item_amount == 0:
+            continue
         InvoiceLineItem.objects.create(
             invoice=invoice, category=item.category,
             line_type=InvoiceLineItem.LineType.FEE,
-            description=item.category.name, amount=item.amount,
+            description=item.display_particulars, amount=item_amount,
         )
-        total += item.amount
+        total += item_amount
+
+    if student.transport_option != "NONE" and student.transport_route:
+        route = FeeStructureTransport.objects.filter(
+            structure=fee_structure, route_name__iexact=student.transport_route.strip(),
+        ).first()
+        if route:
+            transport_amount = route.two_way_amount if student.transport_option == "TWO_WAY" else route.one_way_amount
+            if transport_amount > 0:
+                InvoiceLineItem.objects.create(
+                    invoice=invoice, line_type=InvoiceLineItem.LineType.FEE,
+                    description=f"Transport — {route.route_name} ({student.get_transport_option_display()})",
+                    amount=transport_amount,
+                )
+                total += transport_amount
 
     concessions = FeeConcession.objects.filter(
         student=student, academic_year=academic_year, is_active=True
@@ -1353,6 +1378,44 @@ def generate_invoice_for_student(
         new_value={"total_amount": str(invoice.total_amount)},
     )
     return invoice
+
+
+@transaction.atomic
+def ensure_current_term_invoice_for_student(*, student: Student, issued_by: User, request=None):
+    """Create the current-term invoice once a student is placed in a class.
+
+    The class fee structure is snapshotted into an invoice. Existing invoices
+    are returned unchanged so repeated enrollment/import actions are safe.
+    """
+    from django.db.models import Q
+    from .models import FeeStructure, Invoice, Term
+
+    if not student.is_active or not student.current_class_id:
+        return None
+    term = Term.objects.filter(
+        academic_year__school=student.school, academic_year__is_current=True,
+        is_current=True,
+    ).select_related("academic_year").first()
+    if term is None or term.term_number not in (1, 2, 3):
+        return None
+    existing = Invoice.objects.filter(
+        student=student, academic_year=term.academic_year, term=term,
+    ).exclude(status=Invoice.Status.CANCELLED).first()
+    if existing:
+        return existing
+
+    structures = FeeStructure.objects.filter(
+        school=student.school, academic_year=term.academic_year, is_active=True,
+    ).filter(Q(class_groups=student.current_class) | Q(class_group=student.current_class))
+    annual = structures.filter(term__isnull=True).order_by("-created_at").first()
+    fee_structure = annual or structures.filter(term=term).order_by("-created_at").first()
+    if fee_structure is None:
+        return None
+    return generate_invoice_for_student(
+        student=student, fee_structure=fee_structure,
+        academic_year=term.academic_year, term=term,
+        issued_by=issued_by, due_date=term.end_date, request=request,
+    )
 
 
 @transaction.atomic
@@ -1551,24 +1614,12 @@ def _recompute_invoice_status_after_refund(refund) -> None:
     payments) compared to total_amount."""
     from .models import Invoice, Payment, Refund
 
-    invoice = refund.payment.invoice
-    paid_total = invoice.payments.filter(
-        status=Payment.Status.COMPLETED
-    ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-    refunded_total = Refund.objects.filter(
-        payment__invoice=invoice, status=Refund.Status.COMPLETED
-    ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-
-    net_paid = paid_total - refunded_total
-    if invoice.status == Invoice.Status.CANCELLED:
-        return
-    if net_paid <= 0:
-        invoice.status = Invoice.Status.UNPAID
-    elif net_paid < invoice.total_amount:
-        invoice.status = Invoice.Status.PARTIALLY_PAID
-    else:
-        invoice.status = Invoice.Status.PAID
-    invoice.save(update_fields=["status"])
+    payment = refund.payment
+    invoices = Invoice.objects.filter(pk=payment.invoice_id) if payment.invoice_id else Invoice.objects.filter(
+        payment_allocations__payment=payment,
+    ).distinct()
+    for invoice in invoices:
+        _recompute_invoice_status(invoice)
 
 
 def apply_financial_adjustment(
@@ -1675,18 +1726,47 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
 
 
 def _student_paid_total(*, student: Student, term=None) -> Decimal:
-    from .models import Payment, PaymentAllocation
+    from .models import Payment, PaymentAllocation, Refund
     invoices = student.invoices.exclude(status="CANCELLED")
     if term is not None:
         invoices = invoices.filter(academic_year=term.academic_year, term=term)
     invoice_ids = invoices.values("pk")
-    direct = Payment.objects.filter(
+    direct_payments = Payment.objects.filter(
         invoice_id__in=invoice_ids, status=Payment.Status.COMPLETED
+    )
+    direct = direct_payments.aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    direct_refunds = Refund.objects.filter(
+        payment__in=direct_payments, status=Refund.Status.COMPLETED,
     ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-    allocated = PaymentAllocation.objects.filter(
+    allocations = PaymentAllocation.objects.filter(
         invoice_id__in=invoice_ids, payment__status=Payment.Status.COMPLETED
-    ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-    return direct + allocated
+    ).select_related("payment").prefetch_related("payment__refunds")
+    allocated = Decimal("0")
+    allocated_refunds = Decimal("0")
+    for allocation in allocations:
+        allocated += allocation.amount
+        refund_total = sum((refund.amount for refund in allocation.payment.refunds.all()
+                            if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+        if refund_total and allocation.payment.amount:
+            allocated_refunds += refund_total * allocation.amount / allocation.payment.amount
+    return direct + allocated - direct_refunds - allocated_refunds
+
+
+def get_student_payment_records(*, student: Student) -> list[dict[str, Any]]:
+    """List direct and family-allocated payments as amounts for this child."""
+    from .models import Payment, PaymentAllocation
+
+    direct_payments = Payment.objects.filter(invoice__student=student).select_related(
+        "invoice", "receipt", "family_guardian",
+    )
+    rows = [{"payment": payment, "invoice": payment.invoice, "amount": payment.amount}
+            for payment in direct_payments]
+    allocations = PaymentAllocation.objects.filter(
+        invoice__student=student,
+    ).select_related("payment__receipt", "payment__family_guardian", "invoice")
+    rows.extend({"payment": allocation.payment, "invoice": allocation.invoice,
+                 "amount": allocation.amount} for allocation in allocations)
+    return sorted(rows, key=lambda row: row["payment"].payment_date, reverse=True)
 
 
 def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
@@ -1696,7 +1776,7 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     class fee structure. Completed payments continue to come from the real
     payment ledger, so the balance updates immediately after payment.
     """
-    from .models import Invoice
+    from .models import Invoice, Payment, Refund
     from django.utils import timezone
 
     structure_summary = compute_student_fee_structure_summary(student=student)
@@ -1707,7 +1787,12 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     ) if current_term else invoices.none()
     invoice_source = current_term_invoices if current_term else invoices
     invoice_total = invoice_source.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
-    current_charges = structure_summary["total"] if structure_summary["structure"] or structure_summary.get("structures") else invoice_total
+    current_charges = (
+        invoice_total if current_term_invoices.exists()
+        else structure_summary["total"]
+        if structure_summary["structure"] or structure_summary.get("structures")
+        else invoice_total
+    )
     financial_history = build_student_financial_history(student=student)
     total_paid = (financial_history["current_term_paid"] if current_term
                   else _student_paid_total(student=student))
@@ -1717,9 +1802,28 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     outstanding_balance = total_paid - current_charges + opening_balance
     overdue_source = current_term_invoices if current_term else invoices
     today = timezone.localtime(timezone.now()).date()
-    arrears = overdue_source.filter(due_date__lt=today).exclude(
-        status=Invoice.Status.PAID
-    ).aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+    overdue_invoices = overdue_source.filter(due_date__lt=today).exclude(
+        status=Invoice.Status.CANCELLED,
+    ).prefetch_related(
+        "payments__refunds", "payment_allocations__payment__refunds",
+    )
+    arrears = Decimal("0")
+    for invoice in overdue_invoices:
+        direct_payments = [payment for payment in invoice.payments.all()
+                           if payment.status == Payment.Status.COMPLETED]
+        allocated_rows = [allocation for allocation in invoice.payment_allocations.all()
+                          if allocation.payment.status == Payment.Status.COMPLETED]
+        paid = sum((payment.amount for payment in direct_payments), Decimal("0"))
+        paid += sum((allocation.amount for allocation in allocated_rows), Decimal("0"))
+        refunded = sum((refund.amount for payment in direct_payments
+                        for refund in payment.refunds.all()
+                        if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+        for allocation in allocated_rows:
+            refund_total = sum((refund.amount for refund in allocation.payment.refunds.all()
+                                if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+            if refund_total and allocation.payment.amount:
+                refunded += refund_total * allocation.amount / allocation.payment.amount
+        arrears += max(invoice.total_amount - paid + refunded, Decimal("0"))
 
     return {
         "total_billed": total_billed,
@@ -2841,18 +2945,63 @@ def compute_school_financial_summary(*, school) -> dict[str, Any]:
     joins). Used by the Finance Admin overview page."""
     from django.utils import timezone
 
-    from .models import Invoice, Payment
+    from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    from .models import Invoice, Payment, PaymentAllocation, Refund
 
     invoices = Invoice.objects.filter(school=school).exclude(status=Invoice.Status.CANCELLED)
     total_billed = invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
 
-    total_collected = Payment.objects.filter(
-        invoice__school=school, status=Payment.Status.COMPLETED
+    completed_payments = Payment.objects.filter(status=Payment.Status.COMPLETED).filter(
+        Q(invoice__school=school) | Q(family_guardian__school=school)
+    ).distinct()
+    gross_collected = completed_payments.aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    refunded = Refund.objects.filter(
+        payment__in=completed_payments, status=Refund.Status.COMPLETED,
     ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    total_collected = gross_collected - refunded
+
+    money_field = DecimalField(max_digits=14, decimal_places=2)
+    zero = Value(Decimal("0"), output_field=money_field)
+    direct_paid = Payment.objects.filter(
+        invoice_id=OuterRef("pk"), status=Payment.Status.COMPLETED,
+    ).order_by().values("invoice_id").annotate(total=Sum("amount")).values("total")[:1]
+    allocated_paid = PaymentAllocation.objects.filter(
+        invoice_id=OuterRef("pk"), payment__status=Payment.Status.COMPLETED,
+    ).order_by().values("invoice_id").annotate(total=Sum("amount")).values("total")[:1]
+    direct_refunds = Refund.objects.filter(
+        payment__invoice_id=OuterRef("pk"),
+        payment__status=Payment.Status.COMPLETED,
+        status=Refund.Status.COMPLETED,
+    ).order_by().values("payment__invoice_id").annotate(total=Sum("amount")).values("total")[:1]
+    allocated_refunds = Refund.objects.filter(
+        payment__status=Payment.Status.COMPLETED,
+        payment__allocations__invoice_id=OuterRef("pk"),
+        status=Refund.Status.COMPLETED,
+    ).order_by().values("payment__allocations__invoice_id").annotate(
+        total=Sum(ExpressionWrapper(
+            F("amount") * F("payment__allocations__amount") / F("payment__amount"),
+            output_field=money_field,
+        ))
+    ).values("total")[:1]
+    invoices_with_net_paid = invoices.annotate(
+        _direct_paid=Coalesce(Subquery(direct_paid, output_field=money_field), zero),
+        _allocated_paid=Coalesce(Subquery(allocated_paid, output_field=money_field), zero),
+        _direct_refunds=Coalesce(Subquery(direct_refunds, output_field=money_field), zero),
+        _allocated_refunds=Coalesce(Subquery(allocated_refunds, output_field=money_field), zero),
+    ).annotate(net_paid=ExpressionWrapper(
+        F("_direct_paid") + F("_allocated_paid") - F("_direct_refunds") - F("_allocated_refunds"),
+        output_field=money_field,
+    ))
 
     today = timezone.localtime(timezone.now()).date()
-    overdue_invoices = invoices.filter(due_date__lt=today).exclude(status=Invoice.Status.PAID)
-    arrears = overdue_invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+    overdue_invoices = invoices_with_net_paid.filter(
+        due_date__lt=today, total_amount__gt=F("net_paid"),
+    )
+    arrears = overdue_invoices.annotate(
+        amount_due=ExpressionWrapper(F("total_amount") - F("net_paid"), output_field=money_field)
+    ).aggregate(total=Sum("amount_due"))["total"] or Decimal("0")
 
     return {
         "total_billed": total_billed,
@@ -2860,7 +3009,7 @@ def compute_school_financial_summary(*, school) -> dict[str, Any]:
         "outstanding_balance": total_billed - total_collected,
         "arrears": arrears,
         "overdue_invoice_count": overdue_invoices.count(),
-        "unpaid_invoice_count": invoices.filter(status=Invoice.Status.UNPAID).count(),
+        "unpaid_invoice_count": invoices_with_net_paid.filter(net_paid__lte=0).count(),
     }
 
 
@@ -3062,6 +3211,7 @@ def compute_staff_workload(*, staff: Staff, term) -> dict[str, Any]:
 # section imports or queries Invoice/Payment/Refund/FeeStructure.
 # =============================================================================
 
+@transaction.atomic
 def register_student(
     *,
     school,
@@ -3119,6 +3269,10 @@ def register_student(
             student=student, guardian=guardian,
             defaults={"is_primary_contact": True, "is_billing_contact": True},
         )
+
+    ensure_current_term_invoice_for_student(
+        student=student, issued_by=registered_by, request=request,
+    )
 
     log_audit(
         actor=registered_by, action=AuditLog.Action.CREATE, request=request,

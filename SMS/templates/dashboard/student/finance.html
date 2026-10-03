@@ -65,14 +65,14 @@
     <table class="table table-sm">
         <thead><tr><th>Payment #</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Date</th><th>Receipt</th></tr></thead>
         <tbody>
-        {% for p in payments %}
+        {% for row in payments %}
             <tr>
-                <td>{{ p.payment_number }}</td>
-                <td>{{ p.invoice.invoice_number }}</td>
-                <td>Ksh {{ p.amount }}</td>
-                <td>{{ p.get_payment_method_display }}</td>
-                <td>{{ p.payment_date }}</td>
-                <td>{% if p.receipt %}{{ p.receipt.receipt_number }}{% else %}—{% endif %}</td>
+                <td>{{ row.payment.payment_number }}</td>
+                <td>{{ row.invoice.invoice_number }}</td>
+                <td>Ksh {{ row.amount }}</td>
+                <td>{{ row.payment.get_payment_method_display }}</td>
+                <td>{{ row.payment.payment_date }}</td>
+                <td>{% if row.payment.receipt %}{{ row.payment.receipt.receipt_number }}{% else %}—{% endif %}</td>
             </tr>
         {% endfor %}
         </tbody>

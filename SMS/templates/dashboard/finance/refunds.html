@@ -19,7 +19,7 @@
         {% for r in refunds %}
             <tr>
                 <td>{{ r.refund_number }}</td>
-                <td>{{ r.payment.invoice.student.admission_number }} — {{ r.payment.invoice.student.user.get_full_name|default:r.payment.invoice.student.user.username }}</td>
+                <td>{% if r.payment.invoice_id %}{{ r.payment.invoice.student.admission_number }} — {{ r.payment.invoice.student.user.get_full_name|default:r.payment.invoice.student.user.username }}{% else %}Family: {{ r.payment.family_guardian.first_name }} {{ r.payment.family_guardian.last_name }}{% for allocation in r.payment.allocations.all %}<div class="small text-muted">{{ allocation.invoice.student.admission_number }}</div>{% endfor %}{% endif %}</td>
                 <td>{{ r.payment.payment_number }}</td>
                 <td>Ksh {{ r.amount }}</td>
                 <td>{{ r.reason }}</td>

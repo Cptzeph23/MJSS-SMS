@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Search — SMS{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li><li class="breadcrumb-item active">Search</li>{% endblock %}
+{% block content %}
+<h3 class="mb-1">Search</h3>
+<p class="text-muted mb-4">Results are limited to records your role is allowed to access.</p>
+{% if query|length < 2 %}
+    <div class="alert alert-info">Enter at least two characters to search.</div>
+{% elif results %}
+    <div class="card sms-stat-card p-3"><div class="small text-muted mb-2">{{ result_count }} result{{ result_count|pluralize }}</div>
+        <div class="list-group list-group-flush">
+            {% for result in results %}<a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{{ result.url }}"><span><span class="badge text-bg-light me-2">{{ result.kind }}</span><strong>{{ result.title }}</strong><span class="d-block small text-muted ms-1 mt-1">{{ result.detail }}</span></span><i class="bi bi-arrow-up-right mt-1" aria-hidden="true"></i></a>{% endfor %}
+        </div>
+    </div>
+{% else %}
+    <div class="alert alert-light border">No accessible records matched “{{ query }}”.</div>
+{% endif %}
+{% endblock %}

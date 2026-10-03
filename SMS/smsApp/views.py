@@ -108,6 +108,7 @@ from .services import (
     compute_student_account_summary,
     compute_family_account_summary,
     compute_weighted_average,
+    ensure_current_term_invoice_for_student,
     correct_attendance_record,
     deactivate_staff,
     decide_leave_request,
@@ -116,6 +117,7 @@ from .services import (
     generate_invoice_for_student,
     generate_report_pdf,
     generate_transcript,
+    get_student_payment_records,
     get_children_for_guardian,
     get_dashboard_url_for_role,
     get_grade_for_mark,
@@ -241,6 +243,231 @@ class DashboardRouterView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self, *args, **kwargs):
         return get_dashboard_url_for_role(self.request.user)
+
+
+class GlobalSearchView(LoginRequiredMixin, View):
+    """Search system records using role-scoped querysets only."""
+    template_name = "dashboard/search_results.html"
+
+    def get(self, request):
+        query = request.GET.get("q", "").strip()[:100]
+        user = request.user
+        role = user.role
+        results = []
+
+        def add(queryset, *, kind, title, detail, url, limit=8):
+            for obj in queryset[:limit]:
+                results.append({
+                    "kind": kind, "title": title(obj), "detail": detail(obj),
+                    "url": url(obj),
+                })
+
+        if len(query) >= 2:
+            text_q = Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query) \
+                | Q(user__username__icontains=query) | Q(admission_number__icontains=query)
+            own_student_ids = []
+            class_subjects = ClassSubject.objects.none()
+
+            if role == User.Role.SUPER_ADMIN:
+                students = Student.objects.filter(text_q).select_related("user", "school", "current_class")
+                staff_records = Staff.objects.filter(
+                    Q(staff_id__icontains=query) | Q(job_title__icontains=query)
+                    | Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query)
+                ).select_related("user", "school")
+                classes = Class.objects.filter(name__icontains=query).select_related("school")
+                invoices = Invoice.objects.filter(
+                    Q(invoice_number__icontains=query) | Q(student__admission_number__icontains=query)
+                ).select_related("student__user", "school")
+                payment_qs = Payment.objects.filter(
+                    Q(payment_number__icontains=query) | Q(gateway_reference__icontains=query)
+                ).select_related("invoice__student__user", "family_guardian", "invoice__school")
+                student_url = lambda obj: reverse("dashboard:super_admin_users")
+                invoice_url = lambda obj: reverse("dashboard:super_admin")
+                payment_url = invoice_url
+                add(staff_records, kind="Staff", title=lambda obj: obj.user.get_full_name() or obj.staff_id,
+                    detail=lambda obj: f"{obj.school.name} · {obj.staff_id}",
+                    url=lambda obj: reverse("dashboard:super_admin_users"))
+                add(classes, kind="Class", title=lambda obj: obj.name,
+                    detail=lambda obj: obj.school.name,
+                    url=lambda obj: reverse("dashboard:super_admin_school_config"))
+            elif role in {User.Role.PARENT, User.Role.STUDENT}:
+                if role == User.Role.PARENT:
+                    children = get_children_for_guardian(guardian_user=user).select_related("user", "current_class")
+                else:
+                    children = Student.objects.filter(user=user).select_related("user", "current_class")
+                own_student_ids = list(children.values_list("pk", flat=True))
+                students = children.filter(text_q)
+                class_subjects = ClassSubject.objects.filter(
+                    enrollments__student_id__in=own_student_ids,
+                ).distinct().select_related("class_group", "subject")
+                subject_matches = class_subjects.filter(subject__name__icontains=query)
+                subject_url = lambda obj: reverse("dashboard:parent_child_academic", args=[own_student_ids[0]]) \
+                    if role == User.Role.PARENT and own_student_ids else reverse("dashboard:student_academic")
+                add(subject_matches, kind="Subject", title=lambda obj: obj.subject.name,
+                    detail=lambda obj: obj.class_group.name, url=subject_url)
+                assessment_qs = Assessment.objects.filter(
+                    class_subject__in=class_subjects,
+                    workflow_status=Assessment.WorkflowStatus.PUBLISHED,
+                ).filter(Q(title__icontains=query) | Q(class_subject__subject__name__icontains=query)) \
+                    .select_related("class_subject__subject", "class_subject__class_group", "term")
+                if role == User.Role.PARENT:
+                    student_url = lambda obj: reverse("dashboard:parent_child_academic", args=[obj.pk])
+                    assessment_url = lambda obj: reverse("dashboard:parent_child_academic", args=[
+                        obj.class_subject.enrollments.filter(student_id__in=own_student_ids).values_list("student_id", flat=True).first()
+                    ])
+                else:
+                    student_url = lambda obj: reverse("dashboard:student_academic")
+                    assessment_url = lambda obj: reverse("dashboard:student_academic")
+                add(assessment_qs, kind="Assessment", title=lambda obj: obj.title,
+                    detail=lambda obj: f"{obj.class_subject.class_group.name} · {obj.class_subject.subject.name} · {obj.term}",
+                    url=assessment_url)
+                invoices = Invoice.objects.filter(student_id__in=own_student_ids).filter(
+                    Q(invoice_number__icontains=query) | Q(student__admission_number__icontains=query)
+                    | Q(student__user__first_name__icontains=query) | Q(student__user__last_name__icontains=query)
+                ).select_related("student__user", "school")
+                if role == User.Role.PARENT:
+                    invoice_url = lambda obj: reverse("dashboard:parent_child_finance", args=[obj.student_id])
+                else:
+                    invoice_url = lambda obj: reverse("dashboard:student_finance")
+                payments = Payment.objects.filter(
+                    Q(invoice__student_id__in=own_student_ids)
+                    | Q(allocations__invoice__student_id__in=own_student_ids),
+                ).filter(Q(payment_number__icontains=query) | Q(gateway_reference__icontains=query)) \
+                    .select_related("invoice__student__user", "family_guardian").distinct()
+                payment_qs = payments
+                payment_url = lambda obj: (
+                    reverse("dashboard:parent_child_finance", args=[obj.invoice.student_id])
+                    if role == User.Role.PARENT and obj.invoice_id
+                    else reverse("dashboard:student_finance")
+                    if role == User.Role.STUDENT
+                    else reverse("dashboard:parent_dashboard")
+                )
+            elif role in {User.Role.TEACHER, User.Role.CLASS_TEACHER}:
+                staff = Staff.objects.filter(user=user).first()
+                assignments = TeachingAssignment.objects.filter(teacher=staff) if staff else TeachingAssignment.objects.none()
+                class_subjects = ClassSubject.objects.filter(
+                    teaching_assignments__in=assignments,
+                ).distinct().select_related("class_group", "subject")
+                students = Student.objects.filter(
+                    enrollments__class_subject__in=class_subjects,
+                ).filter(text_q).select_related("user", "current_class").distinct()
+                assessments = Assessment.objects.filter(
+                    class_subject__in=class_subjects,
+                ).filter(Q(title__icontains=query) | Q(class_subject__subject__name__icontains=query)) \
+                    .select_related("class_subject__subject", "class_subject__class_group", "term")
+                add(assessments, kind="Assessment", title=lambda obj: obj.title,
+                    detail=lambda obj: f"{obj.class_subject.class_group.name} · {obj.class_subject.subject.name} · {obj.term}",
+                    url=lambda obj: reverse("dashboard:teacher_marks_entry", args=[obj.pk]))
+                class_matches = class_subjects.filter(
+                    Q(class_group__name__icontains=query) | Q(subject__name__icontains=query)
+                )
+                add(class_matches, kind="Class / Subject",
+                    title=lambda obj: f"{obj.class_group.name} · {obj.subject.name}",
+                    detail=lambda obj: "Your teaching assignment",
+                    url=lambda obj: reverse("dashboard:teacher_class_roster", args=[obj.pk]))
+                student_url = lambda obj: reverse("dashboard:teacher_classes")
+                invoices = Invoice.objects.none()
+                payment_qs = Payment.objects.none()
+            else:
+                try:
+                    school = user.staff_profile.school
+                except Staff.DoesNotExist:
+                    school = None
+                if school is None and role in {
+                    User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL,
+                    User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
+                }:
+                    school = FinanceRequiredMixin().get_school(request)
+                if school:
+                    invoice_scope = Invoice.objects.filter(school=school)
+                    payment_scope = Payment.objects.filter(
+                        Q(invoice__school=school) | Q(family_guardian__school=school)
+                    ).distinct()
+                    invoices = invoice_scope.filter(
+                        Q(invoice_number__icontains=query) | Q(student__admission_number__icontains=query)
+                        | Q(student__user__first_name__icontains=query) | Q(student__user__last_name__icontains=query)
+                    ).select_related("student__user")
+                    payment_qs = payment_scope.filter(
+                        Q(payment_number__icontains=query) | Q(gateway_reference__icontains=query)
+                    ).select_related("invoice__student__user", "family_guardian")
+                    invoice_url = lambda obj: reverse("dashboard:finance_invoice_detail", args=[obj.pk])
+                    payment_url = lambda obj: reverse("dashboard:finance_family_payment")
+                    if role in {User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.ACADEMIC_ADMIN}:
+                        students = Student.objects.filter(school=school).filter(text_q).select_related("user", "current_class")
+                        staff_records = Staff.objects.filter(school=school).filter(
+                            Q(staff_id__icontains=query) | Q(job_title__icontains=query)
+                            | Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query)
+                        ).select_related("user")
+                        classes = Class.objects.filter(school=school, name__icontains=query)
+                        subjects = Subject.objects.filter(school=school, name__icontains=query)
+                        guardians = Guardian.objects.filter(school=school).filter(
+                            Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                            | Q(phone_number__icontains=query) | Q(email__icontains=query)
+                        )
+                        student_url = lambda obj: reverse("dashboard:academic_admin_student_detail", args=[obj.pk])
+                        add(staff_records, kind="Staff", title=lambda obj: obj.user.get_full_name() or obj.staff_id,
+                            detail=lambda obj: f"{obj.staff_id} · {obj.job_title}",
+                            url=lambda obj: reverse("dashboard:staff_admin_staff_list"))
+                        add(classes, kind="Class", title=lambda obj: obj.name,
+                            detail=lambda obj: "School class",
+                            url=lambda obj: reverse("dashboard:principal_configuration"))
+                        add(subjects, kind="Subject", title=lambda obj: obj.name,
+                            detail=lambda obj: obj.code,
+                            url=lambda obj: reverse("dashboard:principal_configuration"))
+                        add(guardians, kind="Parent / Guardian",
+                            title=lambda obj: f"{obj.first_name} {obj.last_name}",
+                            detail=lambda obj: obj.phone_number,
+                            url=lambda obj: reverse("dashboard:principal_parents"))
+                    elif role in {User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT}:
+                        students = Student.objects.filter(
+                            school=school, invoices__in=invoice_scope,
+                        ).filter(text_q).select_related("user", "current_class").distinct()
+                        guardians = Guardian.objects.filter(school=school).filter(
+                            Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                            | Q(phone_number__icontains=query) | Q(email__icontains=query)
+                        )
+                        student_url = lambda obj: reverse("dashboard:finance_family_payment")
+                        add(guardians, kind="Parent / Guardian",
+                            title=lambda obj: f"{obj.first_name} {obj.last_name}",
+                            detail=lambda obj: obj.phone_number,
+                            url=lambda obj: reverse("dashboard:finance_family_payment"))
+                    elif role == User.Role.STAFF_ADMIN:
+                        students = Student.objects.none()
+                        staff_records = Staff.objects.filter(school=school).filter(
+                            Q(staff_id__icontains=query) | Q(job_title__icontains=query)
+                            | Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query)
+                        ).select_related("user")
+                        add(staff_records, kind="Staff", title=lambda obj: obj.user.get_full_name() or obj.staff_id,
+                            detail=lambda obj: f"{obj.staff_id} · {obj.job_title}",
+                            url=lambda obj: reverse("dashboard:staff_admin_staff_list"))
+                        invoices = Invoice.objects.none()
+                        payment_qs = Payment.objects.none()
+                        student_url = lambda obj: reverse("dashboard:staff_admin_staff_list")
+                    else:
+                        students = Student.objects.none()
+                        invoices = Invoice.objects.none()
+                        payment_qs = Payment.objects.none()
+                        student_url = lambda obj: reverse("dashboard:home")
+                else:
+                    students = Student.objects.none()
+                    invoices = Invoice.objects.none()
+                    payment_qs = Payment.objects.none()
+                    student_url = lambda obj: reverse("dashboard:home")
+                    invoice_url = student_url
+                    payment_url = student_url
+
+            add(students, kind="Student", title=lambda obj: obj.user.get_full_name() or obj.admission_number,
+                detail=lambda obj: f"{obj.admission_number} · {obj.current_class or 'No class'}",
+                url=student_url)
+            if role not in {User.Role.TEACHER, User.Role.CLASS_TEACHER}:
+                add(invoices, kind="Invoice", title=lambda obj: obj.invoice_number,
+                    detail=lambda obj: f"{obj.student.admission_number} · Ksh {obj.total_amount}", url=invoice_url)
+                add(payment_qs, kind="Payment", title=lambda obj: obj.payment_number,
+                    detail=lambda obj: f"Ksh {obj.amount} · {obj.get_status_display()}", url=payment_url)
+
+        return render(request, self.template_name, {
+            "query": query, "results": results[:40], "result_count": len(results),
+        })
 
 
 class ComingSoonView(TemplateView):
@@ -1095,9 +1322,7 @@ class StudentFinanceView(StudentRequiredMixin, TemplateView):
         student = self.get_student(self.request)
 
         invoices = Invoice.objects.filter(student=student).order_by("-issue_date")
-        payments = Payment.objects.filter(invoice__student=student).select_related(
-            "invoice", "receipt"
-        ).order_by("-payment_date")
+        payments = get_student_payment_records(student=student)
         account_summary = compute_student_account_summary(student=student)
         from django.db.models import Q
         fee_structures = FeeStructure.objects.none()
@@ -1345,9 +1570,7 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
 
         guardian = get_object_or_404(Guardian, user=self.request.user)
         invoices = Invoice.objects.filter(student=child).order_by("-issue_date")
-        payments = Payment.objects.filter(invoice__student=child).select_related(
-            "invoice", "receipt"
-        ).order_by("-payment_date")
+        payments = get_student_payment_records(student=child)
         account_summary = compute_student_account_summary(student=child)
         financial_history = build_student_financial_history(student=child)
         family_summary = compute_family_account_summary(guardian=guardian)
@@ -2170,11 +2393,15 @@ class FinanceAdminDashboardView(FinanceRequiredMixin, TemplateView):
         summary = compute_school_financial_summary(school=school) if school else {}
 
         recent_payments = Payment.objects.filter(
-            invoice__school=school
-        ).select_related("invoice__student").order_by("-payment_date")[:10] if school else []
+            Q(invoice__school=school) | Q(family_guardian__school=school),
+            status=Payment.Status.COMPLETED,
+        ).select_related("invoice__student__user", "family_guardian").prefetch_related(
+            "allocations__invoice__student__user", "receipt",
+        ).distinct().order_by("-payment_date")[:10] if school else []
 
         pending_refunds = Refund.objects.filter(
-            payment__invoice__school=school, status=Refund.Status.REQUESTED
+            Q(payment__invoice__school=school) | Q(payment__family_guardian__school=school),
+            status=Refund.Status.REQUESTED,
         ).count() if school else 0
 
         context.update({
@@ -2296,9 +2523,17 @@ class FinanceAdminFeeStructuresView(FinanceRequiredMixin, TemplateView):
             for route, one, two in zip(request.POST.getlist("route_name"), request.POST.getlist("one_way_amount"), request.POST.getlist("two_way_amount"), strict=False):
                 if route.strip() and (one or two):
                     FeeStructureTransport.objects.create(structure=structure, route_name=route.strip(), one_way_amount=Decimal(one or "0"), two_way_amount=Decimal(two or "0"))
-            if legacy_term and request.POST.get("due_date"):
+            current_term = Term.objects.filter(
+                academic_year=academic_year, is_current=True,
+            ).first()
+            if current_term and (legacy_term is None or legacy_term == current_term):
                 for class_group in classes:
-                    assign_fee_structure_to_class(fee_structure=structure, class_group=class_group, due_date=datetime.date.fromisoformat(request.POST.get("due_date")), issued_by=request.user, request=request)
+                    for student in Student.objects.filter(
+                        school=school, current_class=class_group, is_active=True,
+                    ).select_related("current_class"):
+                        ensure_current_term_invoice_for_student(
+                            student=student, issued_by=request.user, request=request,
+                        )
             return redirect("dashboard:finance_fee_structures")
         except (ValueError, TypeError) as exc:
             return HttpResponseForbidden(str(exc))
@@ -2541,15 +2776,19 @@ class FinanceAdminRefundsView(FinanceRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
         refunds = Refund.objects.filter(
-            payment__invoice__school=school
-        ).select_related("payment__invoice__student__user").order_by("-requested_at") if school else []
+            Q(payment__invoice__school=school) | Q(payment__family_guardian__school=school)
+        ).select_related(
+            "payment__invoice__student__user", "payment__family_guardian",
+        ).order_by("-requested_at") if school else []
         context.update({"school": school, "refunds": refunds})
         return context
 
     def post(self, request):
         school = self.get_school(request)
         refund = get_object_or_404(
-            Refund, pk=request.POST.get("refund_id"), payment__invoice__school=school
+            Refund.objects.filter(
+                Q(payment__invoice__school=school) | Q(payment__family_guardian__school=school)
+            ), pk=request.POST.get("refund_id"),
         )
         approve = request.POST.get("action") == "approve"
         try:
@@ -3022,6 +3261,9 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
                 if student.current_class_id != class_subject.class_group_id:
                     student.current_class = class_subject.class_group
                     student.save(update_fields=["current_class", "updated_at"])
+                ensure_current_term_invoice_for_student(
+                    student=student, issued_by=request.user, request=request,
+                )
             elif action == "link_guardian":
                 student = get_object_or_404(Student, pk=request.POST.get("student_id"), school=school)
                 guardian = get_object_or_404(Guardian, pk=request.POST.get("guardian_id"), school=school)
@@ -3285,6 +3527,9 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
                             student=student, guardian=guardian,
                             defaults={"is_primary_contact": True, "is_billing_contact": True},
                         )
+                    ensure_current_term_invoice_for_student(
+                        student=student, issued_by=request.user, request=request,
+                    )
             return redirect("dashboard:academic_admin_students")
         except (ValueError, TypeError, KeyError) as exc:
             return HttpResponseForbidden(str(exc))

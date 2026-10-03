@@ -36,6 +36,7 @@ from .models import (
     FeeConcession,
     FeeStructure,
     FeeStructureItem,
+    FeeStructureTransport,
     FinancialAdjustment,
     GradeBand,
     GradingScheme,
@@ -107,6 +108,7 @@ from .services import (
     pay_library_fine,
     record_payment,
     record_family_payment,
+    ensure_current_term_invoice_for_student,
     reject_assessment,
     reschedule_timetable_slot,
     request_refund,
@@ -2472,6 +2474,14 @@ class ParentDashboardTests(TestCase):
         response = self.client.get(reverse("dashboard:parent_dashboard"))
         self.assertNotContains(response, self.unrelated_student.admission_number)
 
+    def test_global_search_only_returns_this_parents_children(self):
+        response = self.client.get(reverse("dashboard:global_search"), {"q": self.child1.admission_number})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.child1.admission_number)
+        response = self.client.get(reverse("dashboard:global_search"), {"q": self.unrelated_student.admission_number})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, self.unrelated_student.admission_number)
+
     def test_can_view_own_child_academic_page(self):
         response = self.client.get(
             reverse("dashboard:parent_child_academic", args=[self.child1.pk])
@@ -3232,6 +3242,16 @@ class FinanceAdminDashboardTests(TestCase):
         response = self.client.get(reverse("dashboard:finance_dashboard"))
         self.assertEqual(response.status_code, 200)
 
+    def test_global_search_is_available_to_finance_for_own_school_records(self):
+        invoice = generate_invoice_for_student(
+            student=self.student, fee_structure=self.structure,
+            academic_year=self.academic_year, term=self.term,
+            issued_by=self.finance_user, due_date=datetime.date(2026, 2, 1),
+        )
+        response = self.client.get(reverse("dashboard:global_search"), {"q": invoice.invoice_number})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, invoice.invoice_number)
+
     def test_dashboard_router_sends_finance_admin_to_finance_dashboard(self):
         response = self.client.get(reverse("dashboard:home"))
         self.assertRedirects(response, reverse("dashboard:finance_dashboard"))
@@ -3335,6 +3355,73 @@ class FinanceAdminDashboardTests(TestCase):
             target_model="Payment", target_object_id=str(payment.pk),
             description__startswith="Corrected family payment",
         ).exists())
+
+    def test_school_finance_summary_counts_family_allocations_as_collected_and_arrears(self):
+        guardian = Guardian.objects.create(
+            school=self.school, first_name="Amina", last_name="Guardian",
+            relationship="Mother", phone_number="+254700000112",
+        )
+        StudentGuardian.objects.create(student=self.student, guardian=guardian)
+        invoice = generate_invoice_for_student(
+            student=self.student, fee_structure=self.structure,
+            academic_year=self.academic_year, term=self.term,
+            issued_by=self.finance_user, due_date=datetime.date.today() - datetime.timedelta(days=1),
+        )
+        record_family_payment(
+            guardian=guardian, amount=Decimal("28000"),
+            allocations=[(invoice, Decimal("28000"))],
+            payment_method=Payment.Method.MPESA,
+            payment_date=datetime.datetime.now(datetime.timezone.utc),
+            received_by=self.finance_user,
+        )
+        summary = compute_school_financial_summary(school=self.school)
+        self.assertEqual(summary["total_billed"], Decimal("50000"))
+        self.assertEqual(summary["total_collected"], Decimal("28000"))
+        self.assertEqual(summary["outstanding_balance"], Decimal("22000"))
+        self.assertEqual(summary["arrears"], Decimal("22000"))
+        self.assertEqual(summary["overdue_invoice_count"], 1)
+        self.assertEqual(summary["unpaid_invoice_count"], 0)
+
+    def test_current_class_enrollment_creates_one_invoice_with_selected_extras(self):
+        self.academic_year.is_current = True
+        self.academic_year.save(update_fields=["is_current"])
+        self.term.is_current = True
+        self.term.save(update_fields=["is_current"])
+        class_group = Class.objects.create(school=self.school, name="Grade 7")
+        self.structure.class_group = class_group
+        self.structure.save(update_fields=["class_group"])
+        self.structure.class_groups.add(class_group)
+        self.student.current_class = class_group
+        self.student.takes_coding_robotics = True
+        self.student.transport_option = "TWO_WAY"
+        self.student.transport_route = "Town Route"
+        self.student.save(update_fields=[
+            "current_class", "takes_coding_robotics", "transport_option", "transport_route",
+        ])
+        optional_category = FeeCategory.objects.create(
+            school=self.school, name="Coding and Robotics", code="CODING",
+        )
+        FeeStructureItem.objects.create(
+            structure=self.structure, category=optional_category,
+            section=FeeStructureItem.Section.OPTIONAL, amount=Decimal("9000"),
+            term_1_amount=Decimal("3000"), term_2_amount=Decimal("3000"),
+            term_3_amount=Decimal("3000"), is_mandatory=False,
+        )
+        FeeStructureTransport.objects.create(
+            structure=self.structure, route_name="Town Route",
+            one_way_amount=Decimal("5000"), two_way_amount=Decimal("8000"),
+        )
+        invoice = ensure_current_term_invoice_for_student(
+            student=self.student, issued_by=self.finance_user,
+        )
+        repeated = ensure_current_term_invoice_for_student(
+            student=self.student, issued_by=self.finance_user,
+        )
+        self.assertEqual(invoice.pk, repeated.pk)
+        self.assertEqual(invoice.total_amount, Decimal("61000"))
+        self.assertEqual(Invoice.objects.filter(
+            student=self.student, academic_year=self.academic_year, term=self.term,
+        ).count(), 1)
 
     def test_deputy_cannot_edit_family_payment(self):
         deputy = User.objects.create_user(

@@ -106,6 +106,7 @@
         .d-flex > .flex-grow-1 { height: 100vh; overflow-y: auto; min-width: 0; }
         .sms-main { min-width: 0; width: 100%; }
         .sms-sidebar-backdrop { display: none; }
+        .sms-global-search { width: min(28vw, 320px); min-width: 180px; }
 
         @media (max-width: 767.98px) {
             html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
@@ -131,10 +132,11 @@
             body.sms-sidebar-open .sms-sidebar-backdrop { display: block; }
             .sms-app-content { width: 100%; max-width: 100%; flex: 1 1 100%; }
             .d-flex > .flex-grow-1 { height: 100dvh; width: 100%; overflow-x: hidden; }
-            .sms-topnav { min-height: 58px; gap: .5rem; padding-inline: .75rem !important; }
+            .sms-topnav { min-height: 58px; gap: .5rem; padding-inline: .75rem !important; flex-wrap: wrap; }
             .sms-topnav > .sms-topnav-start { min-width: 0; flex: 1 1 auto; }
             .sms-topnav .breadcrumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .sms-topnav > .d-flex { gap: .4rem !important; }
+            .sms-global-search { order: 3; flex: 1 0 100%; width: 100%; min-width: 0; }
             .sms-topnav .dropdown-toggle { max-width: 44vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .sms-topnav .dropdown-menu { max-width: calc(100vw - 1.5rem); }
             .sms-main { padding: 1rem !important; }
@@ -200,6 +202,10 @@
                 </ol>
                 </nav>
             </div>
+            <form class="sms-global-search input-group input-group-sm" method="get" action="{% url 'dashboard:global_search' %}" role="search">
+                <input class="form-control" type="search" name="q" value="{% if query %}{{ query }}{% endif %}" placeholder="Search this system" aria-label="Search system records">
+                <button class="btn btn-outline-primary" type="submit" aria-label="Search"><i class="bi bi-search" aria-hidden="true"></i></button>
+            </form>
             <div class="d-flex align-items-center gap-3">
                 <div class="dropdown">
                     <button class="btn btn-light position-relative" title="Notifications" data-bs-toggle="dropdown" type="button" aria-label="Notifications">

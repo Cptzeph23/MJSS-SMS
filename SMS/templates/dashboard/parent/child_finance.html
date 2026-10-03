@@ -81,13 +81,13 @@
 <table class="table table-sm">
     <thead><tr><th>Receipt #</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Date</th></tr></thead>
     <tbody>
-        {% for payment in payments %}
+        {% for row in payments %}
         <tr>
-            <td>{{ payment.receipt.receipt_number|default:"—" }}</td>
-            <td>{{ payment.invoice.invoice_number }}</td>
-            <td>Ksh {{ payment.amount }}</td>
-            <td>{{ payment.get_payment_method_display }}</td>
-            <td>{{ payment.payment_date }}</td>
+            <td>{{ row.payment.receipt.receipt_number|default:"—" }}</td>
+            <td>{{ row.invoice.invoice_number }}</td>
+            <td>Ksh {{ row.amount }}</td>
+            <td>{{ row.payment.get_payment_method_display }}</td>
+            <td>{{ row.payment.payment_date }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="5" class="text-muted">No payments recorded yet.</td></tr>
