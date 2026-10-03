@@ -254,6 +254,11 @@ class GlobalSearchView(LoginRequiredMixin, View):
         user = request.user
         role = user.role
         results = []
+        normalized_query = " ".join(query.casefold().split())
+        # Let users search by the name of a record type as well as its fields.
+        # These switches only broaden a queryset that has already been scoped
+        # to the user's RBAC boundary below.
+        search_students = normalized_query in {"student", "students", "learner", "learners", "pupil", "pupils"}
 
         def add(queryset, *, kind, title, detail, url, limit=8):
             for obj in queryset[:limit]:
@@ -269,7 +274,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
             class_subjects = ClassSubject.objects.none()
 
             if role == User.Role.SUPER_ADMIN:
-                students = Student.objects.filter(text_q).select_related("user", "school", "current_class")
+                students = (Student.objects.all() if search_students else Student.objects.filter(text_q)).select_related("user", "school", "current_class")
                 staff_records = Staff.objects.filter(
                     Q(staff_id__icontains=query) | Q(job_title__icontains=query)
                     | Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query)
@@ -296,7 +301,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
                 else:
                     children = Student.objects.filter(user=user).select_related("user", "current_class")
                 own_student_ids = list(children.values_list("pk", flat=True))
-                students = children.filter(text_q)
+                students = children if search_students else children.filter(text_q)
                 class_subjects = ClassSubject.objects.filter(
                     enrollments__student_id__in=own_student_ids,
                 ).distinct().select_related("class_group", "subject")
@@ -350,7 +355,10 @@ class GlobalSearchView(LoginRequiredMixin, View):
                 ).distinct().select_related("class_group", "subject")
                 students = Student.objects.filter(
                     enrollments__class_subject__in=class_subjects,
-                ).filter(text_q).select_related("user", "current_class").distinct()
+                )
+                if not search_students:
+                    students = students.filter(text_q)
+                students = students.select_related("user", "current_class").distinct()
                 assessments = Assessment.objects.filter(
                     class_subject__in=class_subjects,
                 ).filter(Q(title__icontains=query) | Q(class_subject__subject__name__icontains=query)) \
@@ -393,7 +401,10 @@ class GlobalSearchView(LoginRequiredMixin, View):
                     invoice_url = lambda obj: reverse("dashboard:finance_invoice_detail", args=[obj.pk])
                     payment_url = lambda obj: reverse("dashboard:finance_family_payment")
                     if role in {User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.ACADEMIC_ADMIN}:
-                        students = Student.objects.filter(school=school).filter(text_q).select_related("user", "current_class")
+                        students = Student.objects.filter(school=school)
+                        if not search_students:
+                            students = students.filter(text_q)
+                        students = students.select_related("user", "current_class")
                         staff_records = Staff.objects.filter(school=school).filter(
                             Q(staff_id__icontains=query) | Q(job_title__icontains=query)
                             | Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query)
@@ -421,7 +432,10 @@ class GlobalSearchView(LoginRequiredMixin, View):
                     elif role in {User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT}:
                         students = Student.objects.filter(
                             school=school, invoices__in=invoice_scope,
-                        ).filter(text_q).select_related("user", "current_class").distinct()
+                        )
+                        if not search_students:
+                            students = students.filter(text_q)
+                        students = students.select_related("user", "current_class").distinct()
                         guardians = Guardian.objects.filter(school=school).filter(
                             Q(first_name__icontains=query) | Q(last_name__icontains=query)
                             | Q(phone_number__icontains=query) | Q(email__icontains=query)

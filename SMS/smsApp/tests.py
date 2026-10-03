@@ -2480,7 +2480,21 @@ class ParentDashboardTests(TestCase):
         self.assertContains(response, self.child1.admission_number)
         response = self.client.get(reverse("dashboard:global_search"), {"q": self.unrelated_student.admission_number})
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, self.unrelated_student.admission_number)
+        self.assertFalse(any(
+            self.unrelated_student.admission_number in result["title"]
+            or self.unrelated_student.admission_number in result["detail"]
+            for result in response.context["results"]
+        ))
+
+    def test_searching_students_lists_only_linked_children(self):
+        response = self.client.get(reverse("dashboard:global_search"), {"q": "students"})
+        self.assertEqual(response.status_code, 200)
+        result_details = " ".join(
+            f'{result["title"]} {result["detail"]}' for result in response.context["results"]
+        )
+        self.assertIn(self.child1.admission_number, result_details)
+        self.assertIn(self.child2.admission_number, result_details)
+        self.assertNotIn(self.unrelated_student.admission_number, result_details)
 
     def test_can_view_own_child_academic_page(self):
         response = self.client.get(

@@ -203,12 +203,12 @@
                 </nav>
             </div>
             <form class="sms-global-search input-group input-group-sm" method="get" action="{% url 'dashboard:global_search' %}" role="search">
-                <input class="form-control" type="search" name="q" value="{% if query %}{{ query }}{% endif %}" placeholder="Search this system" aria-label="Search system records">
+                <input class="form-control" type="search" name="q" value="{% if query %}{{ query }}{% endif %}" placeholder="Search..." aria-label="Search system records">
                 <button class="btn btn-outline-primary" type="submit" aria-label="Search"><i class="bi bi-search" aria-hidden="true"></i></button>
             </form>
             <div class="d-flex align-items-center gap-3">
                 <div class="dropdown">
-                    <button class="btn btn-light position-relative" title="Notifications" data-bs-toggle="dropdown" type="button" aria-label="Notifications">
+                    <button class="btn btn-light position-relative" title="Notifications" data-bs-toggle="dropdown" type="button" aria-label="Notifications" id="notification-dropdown-toggle">
                         <i class="bi bi-bell"></i><span id="notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger{% if not unread_notification_count %} d-none{% endif %}">{{ unread_notification_count }}</span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end p-2" style="min-width:320px" id="notification-menu"><li class="dropdown-header">Notifications</li>{% for notification in dashboard_notifications %}<li><a class="dropdown-item {% if not notification.is_read %}fw-semibold{% endif %}" href="{% url 'dashboard:notification_open' notification.pk %}"><div>{{ notification.title }}</div><small class="text-muted">{{ notification.message|truncatechars:80 }}</small></a></li>{% empty %}<li class="dropdown-item-text text-muted">No notifications.</li>{% endfor %}</ul>
@@ -273,7 +273,10 @@
             menu.innerHTML = '<li class="dropdown-header">Notifications</li>' + rows;
         }).catch(() => {});
     }
-    setInterval(refreshNotifications, 30000);
+    // Refresh less aggressively; opening the notification menu fetches fresh data immediately.
+    const notificationToggle = document.getElementById("notification-dropdown-toggle");
+    if (notificationToggle) notificationToggle.addEventListener("click", refreshNotifications);
+    setInterval(refreshNotifications, 60000);
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

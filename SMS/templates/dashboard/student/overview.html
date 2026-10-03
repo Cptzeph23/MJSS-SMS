@@ -16,26 +16,38 @@
 <p class="text-muted mb-4">{{ student.admission_number }} &middot; {{ student.current_class|default:"No class assigned" }}
     {% if current_term %} &middot; {{ current_term }}{% endif %}</p>
 
-<div class="row g-3">
-    <div class="col-md-3 col-sm-6">
+<div class="row row-cols-1 row-cols-sm-2 row-cols-xl-3 g-3">
+    <div class="col">
         <div class="card sms-stat-card p-3">
             <div class="text-muted small">Term Average</div>
             <div class="fs-3 fw-semibold">{{ average|default:"—" }}{% if average %}%{% endif %}</div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
+    <div class="col">
         <div class="card sms-stat-card p-3">
             <div class="text-muted small">Pending Assignments</div>
             <div class="fs-3 fw-semibold">{{ pending_assignments }}</div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
+    <div class="col">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Total Billed (Current Term)</div>
+            <div class="fs-3 fw-semibold">Ksh {{ account_summary.total_billed }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card sms-stat-card p-3">
+            <div class="text-muted small">Total Paid (Current Term)</div>
+            <div class="fs-3 fw-semibold">Ksh {{ account_summary.total_paid }}</div>
+        </div>
+    </div>
+    <div class="col">
         <div class="card sms-stat-card p-3">
             <div class="text-muted small">Outstanding Balance</div>
             <div class="fs-3 fw-semibold">Ksh {{ account_summary.outstanding_balance_display }}</div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
+    <div class="col">
         <div class="card sms-stat-card p-3">
             <div class="text-muted small">Unread Notifications</div>
             <div class="fs-3 fw-semibold">{{ unread_notifications }}</div>

@@ -40,7 +40,7 @@
                         {% for error in form.non_field_errors %}{{ error }}{% endfor %}
                     </div>
                 {% endif %}
-                <form method="post" novalidate>
+                <form method="post" id="login-form" novalidate>
                     {% csrf_token %}
                     <div class="mb-3">
                         <label class="form-label" for="{{ form.username.id_for_label }}">Username</label>
@@ -55,11 +55,21 @@
                         {% for error in form.password.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
                     </div>
                     <input type="hidden" name="next" value="{{ next }}">
-                    <button type="submit" class="btn btn-maroon w-100 py-2">Sign in</button>
+                    <button type="submit" class="btn btn-maroon w-100 py-2" id="login-submit">
+                        <span class="login-button-label">Sign in</span>
+                    </button>
                 </form>
             </div>
         </div>
     </div>
 </div>
+<script>
+    document.getElementById("login-form").addEventListener("submit", function () {
+        const button = document.getElementById("login-submit");
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Signing in…';
+    });
+</script>
 </body>
 </html>

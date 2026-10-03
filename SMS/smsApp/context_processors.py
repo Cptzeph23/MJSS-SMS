@@ -1,9 +1,9 @@
 from django.core.cache import cache
 
-from .models import Notification, School
+from .models import Notification, School, User
 
 
-NOTIFICATION_CONTEXT_TIMEOUT = 5
+NOTIFICATION_CONTEXT_TIMEOUT = 10
 
 
 def _notification_cache_key(user_id):
@@ -15,23 +15,27 @@ def _school_for_request(request):
     if not request.user.is_authenticated:
         return getattr(request, "school", None)
 
+    # TenantMiddleware has already validated this host/user pairing. Reuse its
+    # resolved object instead of repeating profile and school lookups.
+    tenant_school = getattr(request, "school", None)
+    if tenant_school is not None:
+        return tenant_school
+
     selected_id = request.session.get("selected_school_id")
     if request.user.is_superuser and selected_id:
         return School.objects.filter(pk=selected_id, is_active=True).first()
     if request.user.is_superuser:
         return None
 
-    school_ids = set()
-    for relation in ("staff_profile", "student_profile", "guardian_profile"):
-        try:
-            profile = getattr(request.user, relation)
-        except Exception:
-            profile = None
-        if profile is not None and profile.school_id:
-            school_ids.add(profile.school_id)
-    if len(school_ids) != 1:
+    relation = {
+        User.Role.PARENT: "guardian_profile",
+        User.Role.STUDENT: "student_profile",
+    }.get(request.user.role, "staff_profile")
+    try:
+        school_id = getattr(request.user, relation).school_id
+    except (AttributeError, School.DoesNotExist):
         return None
-    return School.objects.filter(pk=school_ids.pop(), is_active=True).first()
+    return School.objects.filter(pk=school_id, is_active=True).first()
 
 
 def dashboard_notifications(request):

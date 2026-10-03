@@ -3,7 +3,7 @@
 {% block breadcrumbs %}<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li><li class="breadcrumb-item active">Search</li>{% endblock %}
 {% block content %}
 <h3 class="mb-1">Search</h3>
-<p class="text-muted mb-4">Results are limited to records your role is allowed to access.</p>
+
 {% if query|length < 2 %}
     <div class="alert alert-info">Enter at least two characters to search.</div>
 {% elif results %}
@@ -13,6 +13,6 @@
         </div>
     </div>
 {% else %}
-    <div class="alert alert-light border">No accessible records matched “{{ query }}”.</div>
+    <div class="alert alert-light border">No records matched for “{{ query }}”.</div>
 {% endif %}
 {% endblock %}
