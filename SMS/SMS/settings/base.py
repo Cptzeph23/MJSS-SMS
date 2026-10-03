@@ -129,6 +129,8 @@ else:
         "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
     }
 
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+
 # ---------------------------------------------------------------------------
 # Internationalization
 # ---------------------------------------------------------------------------
@@ -144,10 +146,20 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+CONN_MAX_AGE = 600
 
 # =============================================================================
 # Phase 22 — REST API (spec §25/§26). API-first: this exposes the same

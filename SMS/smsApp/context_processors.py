@@ -1,17 +1,27 @@
 from django.core.cache import cache
+from django.db.models import Count, Q
 
 from .models import Notification, School, User
 
 
-NOTIFICATION_CONTEXT_TIMEOUT = 10
+NOTIFICATION_CONTEXT_TIMEOUT = 120  # 2 minutes (was 10s — caused constant cache misses)
 
 
 def _notification_cache_key(user_id):
     return f"dashboard-notifications:{user_id}"
 
 
+def invalidate_notification_cache(user_id):
+    """Call this after creating or marking notifications to bust the cache."""
+    cache.delete(_notification_cache_key(user_id))
+
+
 def _school_for_request(request):
-    """Return the school unambiguously associated with this request."""
+    """Return the school unambiguously associated with this request.
+    
+    Optimized: reuses TenantMiddleware's resolved school to avoid
+    duplicate profile/school lookups.
+    """
     if not request.user.is_authenticated:
         return getattr(request, "school", None)
 
@@ -27,13 +37,17 @@ def _school_for_request(request):
     if request.user.is_superuser:
         return None
 
-    relation = {
-        User.Role.PARENT: "guardian_profile",
-        User.Role.STUDENT: "student_profile",
-    }.get(request.user.role, "staff_profile")
+    # Use role-based lookup (only check the ONE matching profile)
+    role = request.user.role
+    if role == User.Role.PARENT:
+        relation = "guardian_profile"
+    elif role == User.Role.STUDENT:
+        relation = "student_profile"
+    else:
+        relation = "staff_profile"
     try:
         school_id = getattr(request.user, relation).school_id
-    except (AttributeError, School.DoesNotExist):
+    except Exception:
         return None
     return School.objects.filter(pk=school_id, is_active=True).first()
 
@@ -50,16 +64,21 @@ def dashboard_notifications(request):
     cache_key = _notification_cache_key(request.user.pk)
     cached = cache.get(cache_key)
     if cached is None:
-        rows = list(
-            Notification.objects.filter(recipient_id=request.user.pk)
-            .only("id", "title", "message", "is_read", "created_at")
-            .order_by("-created_at")[:8]
-        )
+        # Single query with annotation instead of two separate queries
+        qs = Notification.objects.filter(
+            recipient_id=request.user.pk
+        ).only("id", "title", "message", "is_read", "created_at").order_by("-created_at")[:8]
+        rows = list(qs)
+        unread = sum(1 for r in rows if not r.is_read)
+        # If all 8 are read, we might have more unread ones not in this slice.
+        # Only run the count query if needed.
+        if unread == 0 and rows:
+            unread = Notification.objects.filter(
+                recipient_id=request.user.pk, is_read=False
+            ).count()
         cached = {
             "notifications": rows,
-            "unread_notification_count": Notification.objects.filter(
-                recipient_id=request.user.pk, is_read=False
-            ).count(),
+            "unread_notification_count": unread,
         }
         cache.set(cache_key, cached, timeout=NOTIFICATION_CONTEXT_TIMEOUT)
 

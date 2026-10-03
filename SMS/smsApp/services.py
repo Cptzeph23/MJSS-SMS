@@ -764,7 +764,7 @@ def render_report_html(*, report_card: "ReportCard") -> str:
     return render_to_string(template_path, context)
 
 
-def _school_logo_data_uri(school) -> str:
+def _school_logo_data_uri(school) -> str | None:
     """Return the configured school logo as an embeddable image URI.
 
     Report PDFs are rendered by WeasyPrint without a browser request context;
@@ -772,19 +772,35 @@ def _school_logo_data_uri(school) -> str:
     logo is read through Django's configured storage and embedded directly so
     both HTML previews and PDFs use the same reliable asset.
     """
-    import base64
-    import mimetypes
-
     if not school or not school.logo:
-        return ""
+        return None
+    from django.core.cache import cache as _cache
+    cache_key = f"school_logo_data_uri:{school.pk}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached if cached != "" else None
     try:
         school.logo.open("rb")
         contents = school.logo.read()
         school.logo.close()
-    except (OSError, ValueError):
-        return ""
-    content_type = mimetypes.guess_type(school.logo.name)[0] or "image/jpeg"
-    return f"data:{content_type};base64,{base64.b64encode(contents).decode('ascii')}"
+    except Exception:
+        _cache.set(cache_key, "", timeout=300)
+        return None
+    import base64
+    name = school.logo.name.lower()
+    if name.endswith(".png"):
+        content_type = "image/png"
+    elif name.endswith(".jpg") or name.endswith(".jpeg"):
+        content_type = "image/jpeg"
+    elif name.endswith(".gif"):
+        content_type = "image/gif"
+    elif name.endswith(".svg"):
+        content_type = "image/svg+xml"
+    else:
+        content_type = "image/png"
+    data_uri = f"data:{content_type};base64,{base64.b64encode(contents).decode('ascii')}"
+    _cache.set(cache_key, data_uri, timeout=3600)  # Cache for 1 hour
+    return data_uri
 
 
 def generate_report_pdf(
@@ -1769,7 +1785,7 @@ def get_student_payment_records(*, student: Student) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: row["payment"].payment_date, reverse=True)
 
 
-def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
+def compute_student_account_summary(*, student: Student, financial_history: dict | None = None, fee_structure_summary: dict | None = None) -> dict[str, Any]:
     """Return direct fee-structure billing plus payment history.
 
     Invoice totals remain the fallback for legacy students without an active
@@ -1779,7 +1795,7 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     from .models import Invoice, Payment, Refund
     from django.utils import timezone
 
-    structure_summary = compute_student_fee_structure_summary(student=student)
+    structure_summary = compute_student_fee_structure_summary(student=student) if fee_structure_summary is None else fee_structure_summary
     invoices = Invoice.objects.filter(student=student).exclude(status=Invoice.Status.CANCELLED)
     current_term = structure_summary.get("term")
     current_term_invoices = invoices.filter(
@@ -1793,7 +1809,8 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
         if structure_summary["structure"] or structure_summary.get("structures")
         else invoice_total
     )
-    financial_history = build_student_financial_history(student=student)
+    if financial_history is None:
+        financial_history = build_student_financial_history(student=student)
     total_paid = (financial_history["current_term_paid"] if current_term
                   else _student_paid_total(student=student))
     opening_balance = financial_history["opening_balance"] if current_term else Decimal("0")
@@ -2553,6 +2570,8 @@ def send_notification(
         title=title, message=body, related_model=related_model,
         related_object_id=str(related_object_id) if related_object_id != "" else "",
     )
+    from .context_processors import invalidate_notification_cache
+    invalidate_notification_cache(recipient.pk)
 
     # In-app is implicit/free — record it as SENT immediately, no dispatch needed.
     if prefs.in_app_enabled:
@@ -2652,8 +2671,8 @@ def mark_notification_read(*, notification) -> None:
         notification.is_read = True
         notification.read_at = timezone.now()
         notification.save(update_fields=["is_read", "read_at"])
-        from django.core.cache import cache
-        cache.delete(f"dashboard-notifications:{notification.recipient_id}")
+        from .context_processors import invalidate_notification_cache
+        invalidate_notification_cache(notification.recipient_id)
 
 
 # --- Role-aware convenience wrappers matching spec §22's exact examples ---
@@ -3313,6 +3332,17 @@ def change_student_status(
     return student
 
 
+def _build_status_breakdown(students_qs):
+    from django.db.models import Count
+    counts = dict(
+        students_qs.values_list("status").annotate(count=Count("pk")).values_list("status", "count")
+    )
+    return [
+        {"code": status, "label": label, "count": counts.get(status, 0)}
+        for status, label in Student.Status.choices
+    ]
+
+
 def compute_school_academic_summary(*, school) -> dict[str, Any]:
     """Overview page aggregate — student counts by status, pending
     assessment-approval queue depth, current academic year/term. No
@@ -3335,10 +3365,7 @@ def compute_school_academic_summary(*, school) -> dict[str, Any]:
 
     return {
         "total_students": students.filter(is_active=True).count(),
-        "status_breakdown": [
-            {"code": status, "label": label, "count": students.filter(status=status).count()}
-            for status, label in Student.Status.choices
-        ],
+        "status_breakdown": _build_status_breakdown(students),
         "current_academic_year": current_year,
         "current_term": current_term,
         "pending_result_approvals": pending_approvals,

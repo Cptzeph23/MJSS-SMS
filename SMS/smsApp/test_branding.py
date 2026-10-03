@@ -1,9 +1,13 @@
 from pathlib import Path
 
+from django.core.files.storage import storages
 from django.test import SimpleTestCase
 
 
 class BrandingTemplateTests(SimpleTestCase):
+    def test_default_media_storage_can_build_urls(self):
+        self.assertTrue(storages["default"].url("school/logos/example.png"))
+
     def test_shared_theme_is_maroon_and_gray(self):
         base = Path("templates/base.html").read_text()
         self.assertIn("--sms-maroon-900", base)

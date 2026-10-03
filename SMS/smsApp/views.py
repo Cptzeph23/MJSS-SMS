@@ -536,11 +536,20 @@ class SuperAdminDashboardView(RoleRequiredMixin, TemplateView):
         current_years = AcademicYear.objects.filter(is_current=True).order_by("school__name", "name")
         current_terms = Term.objects.filter(is_current=True).order_by("academic_year__school__name", "name")
 
+        from django.db.models import Count, Q as _Q
+        school_stats = {}
+        for row in School.objects.all().annotate(
+            _students=Count("students", filter=_Q(students__is_active=True), distinct=True),
+            _staff=Count("staff", filter=_Q(staff__is_active=True), distinct=True),
+            _classes=Count("classes", filter=_Q(classes__is_active=True), distinct=True),
+        ).values("pk", "name", "_students", "_staff", "_classes"):
+            school_stats[row["pk"]] = row
+
         context.update(
             {
-                "total_students": Student.objects.filter(is_active=True).count(),
-                "total_staff": Staff.objects.filter(is_active=True).count(),
-                "active_classes": Class.objects.filter(is_active=True).count(),
+                "total_students": sum(s.get("_students", 0) for s in school_stats.values()),
+                "total_staff": sum(s.get("_staff", 0) for s in school_stats.values()),
+                "active_classes": sum(s.get("_classes", 0) for s in school_stats.values()),
                 "current_academic_year": current_years.first(),
                 "current_term": current_terms.first(),
                 "current_academic_years": current_years,
@@ -551,9 +560,9 @@ class SuperAdminDashboardView(RoleRequiredMixin, TemplateView):
                 "school_chart": [
                     {
                         "name": school.name,
-                        "students": Student.objects.filter(school=school, is_active=True).count(),
-                        "staff": Staff.objects.filter(school=school, is_active=True).count(),
-                        "classes": Class.objects.filter(school=school, is_active=True).count(),
+                        "students": school_stats.get(school.pk, {}).get("_students", 0),
+                        "staff": school_stats.get(school.pk, {}).get("_staff", 0),
+                        "classes": school_stats.get(school.pk, {}).get("_classes", 0),
                         "collected": float(financial_summaries[index]["total_collected"]),
                         "outstanding": float(financial_summaries[index]["outstanding_balance"]),
                         "attendance": attendance_summaries[index]["attendance_rate_percent"] or 0,
@@ -788,9 +797,7 @@ class StudentDashboardView(StudentRequiredMixin, TemplateView):
         ).distinct().count()
 
         account_summary = compute_student_account_summary(student=student)
-        unread_notifications = Notification.objects.filter(
-            recipient=self.request.user, is_read=False
-        ).count()
+        unread_notifications = 0  # Provided by context processor as unread_notification_count
 
         context.update({
             "student": student,
@@ -871,7 +878,10 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
         if search:
             from django.db.models import Count, Q
             users = users.filter(Q(username__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(email__icontains=search))
-        context.update({"users": users, "search": search, "roles": ACTIVE_ROLE_CHOICES, "schools": School.objects.all()})
+        from django.core.paginator import Paginator
+        paginator = Paginator(users, 25)
+        page_obj = paginator.get_page(self.request.GET.get("page"))
+        context.update({"users": page_obj, "page_obj": page_obj, "search": search, "roles": ACTIVE_ROLE_CHOICES, "schools": School.objects.all()})
         return context
 
     def post(self, request):
@@ -1502,9 +1512,7 @@ class ParentDashboardView(ParentRequiredMixin, TemplateView):
                 "account_summary": account_summary,
             })
 
-        unread_notifications = Notification.objects.filter(
-            recipient=self.request.user, is_read=False
-        ).count()
+        unread_notifications = 0  # Provided by context processor as unread_notification_count
 
         context.update({
             "child_rows": child_rows,
@@ -1734,9 +1742,7 @@ class TeacherDashboardView(TeacherRequiredMixin, TemplateView):
             teacher=staff, day_of_week=today_code
         ).select_related("period", "class_group", "room").order_by("period__order") if today_code else TimetableSlot.objects.none()
 
-        unread_notifications = Notification.objects.filter(
-            recipient=self.request.user, is_read=False
-        ).count()
+        unread_notifications = 0  # Provided by context processor as unread_notification_count
 
         context.update({
             "staff": staff,
@@ -2381,20 +2387,24 @@ class FinanceRequiredMixin(RoleRequiredMixin):
         return context
 
     def get_school(self, request):
-        if hasattr(request.user, "staff_profile"):
+        # Reuse tenant-resolved school from middleware first
+        tenant_school = getattr(request, "school", None)
+        if tenant_school is not None:
+            return tenant_school
+        try:
             return request.user.staff_profile.school
-        # Legacy finance accounts without a Staff profile retain the existing
-        # data-based fallback until they are assigned through Super Admin.
+        except Exception:
+            pass
+        # Legacy fallback — cached to avoid expensive annotation on every request
+        from django.core.cache import cache as _cache
         from .models import School
-        from django.db.models import Count, Q
-        return School.objects.filter(is_active=True).annotate(
-            active_fee_structures=Count(
-                "fee_structures", filter=Q(fee_structures__is_active=True), distinct=True
-            ),
-            active_students=Count(
-                "students", filter=Q(students__is_active=True), distinct=True
-            ),
-        ).order_by("-active_fee_structures", "-active_students", "id").first()
+        cache_key = "finance:legacy_school_fallback"
+        school = _cache.get(cache_key)
+        if school is None:
+            school = School.objects.filter(is_active=True).order_by("id").first()
+            if school:
+                _cache.set(cache_key, school, timeout=300)
+        return school
 
 
 class FinanceAdminDashboardView(FinanceRequiredMixin, TemplateView):
@@ -2575,6 +2585,8 @@ class FinanceAdminInvoicesView(FinanceRequiredMixin, TemplateView):
     active_nav = "invoices"
 
     def get_context_data(self, **kwargs):
+        from django.core.paginator import Paginator
+
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
         status_filter = self.request.GET.get("status", "")
@@ -2585,11 +2597,16 @@ class FinanceAdminInvoicesView(FinanceRequiredMixin, TemplateView):
         if status_filter:
             invoices = invoices.filter(status=status_filter)
 
+        paginator = Paginator(invoices, 25)
+        page_obj = paginator.get_page(self.request.GET.get("page"))
+
         context.update({
-            "school": school, "invoices": invoices,
+            "school": school, "invoices": page_obj, "page_obj": page_obj,
             "status_choices": Invoice.Status.choices, "status_filter": status_filter,
             "fee_structures": FeeStructure.objects.filter(school=school, is_active=True) if school else [],
-            "students": Student.objects.filter(school=school, is_active=True).select_related("user") if school else [],
+            "students": Student.objects.filter(school=school, is_active=True).select_related("user").only(
+                "id", "user__first_name", "user__last_name", "user__username", "admission_number"
+            ) if school else [],
         })
         return context
 
@@ -2657,11 +2674,20 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
     active_nav = "family_payments"
 
     def get_context_data(self, **kwargs):
+        from django.core.paginator import Paginator
+
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
         families = []
+        page_obj = None
         if school:
-            for guardian in Guardian.objects.filter(school=school, is_active=True).order_by("last_name", "first_name"):
+            guardian_qs = Guardian.objects.filter(
+                school=school, is_active=True
+            ).order_by("last_name", "first_name")
+            paginator = Paginator(guardian_qs, 15)
+            page_number = self.request.GET.get("page")
+            page_obj = paginator.get_page(page_number)
+            for guardian in page_obj:
                 children = Student.objects.filter(
                     school=school, studentguardian__guardian=guardian
                 ).distinct().select_related("user")
@@ -2699,6 +2725,7 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
         context.update({
             "school": school,
             "families": families,
+            "page_obj": page_obj,
             "payment_methods": [
                 choice for choice in Payment.Method.choices
                 if choice[0] in {
@@ -2791,14 +2818,18 @@ class FinanceAdminRefundsView(FinanceRequiredMixin, TemplateView):
     active_nav = "refunds"
 
     def get_context_data(self, **kwargs):
+        from django.core.paginator import Paginator
+
         context = super().get_context_data(**kwargs)
         school = self.get_school(self.request)
         refunds = Refund.objects.filter(
             Q(payment__invoice__school=school) | Q(payment__family_guardian__school=school)
         ).select_related(
             "payment__invoice__student__user", "payment__family_guardian",
-        ).order_by("-requested_at") if school else []
-        context.update({"school": school, "refunds": refunds})
+        ).order_by("-requested_at") if school else Refund.objects.none()
+        paginator = Paginator(refunds, 25)
+        page_obj = paginator.get_page(self.request.GET.get("page"))
+        context.update({"school": school, "refunds": page_obj, "page_obj": page_obj})
         return context
 
     def post(self, request):
@@ -2899,8 +2930,11 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
                 | Q(user__last_name__icontains=search)
             )
 
+        from django.core.paginator import Paginator
+        paginator = Paginator(staff_qs, 25)
+        page_obj = paginator.get_page(self.request.GET.get("page"))
         context.update({
-            "school": school, "staff_list": staff_qs, "search": search,
+            "school": school, "staff_list": page_obj, "page_obj": page_obj, "search": search,
             "departments": Department.objects.filter(is_active=True) if self.request.user.is_superuser else (Department.objects.filter(school=school, is_active=True) if school else []),
             "schools": School.objects.filter(is_active=True) if self.request.user.is_superuser else [],
             "teacher_mode": teacher_mode,
@@ -3329,10 +3363,16 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
                 .order_by("level_order", "name")
                 .values("name", "student_count")
             )
+            from django.db.models import Count as _Count
+            status_counts = dict(
+                Assessment.objects.filter(
+                    class_subject__class_group__school=school
+                ).values_list("workflow_status").annotate(
+                    count=_Count("pk")
+                ).values_list("workflow_status", "count")
+            )
             assessment_rows = [
-                {"label": label, "count": Assessment.objects.filter(
-                    class_subject__class_group__school=school, workflow_status=code
-                ).count()}
+                {"label": label, "count": status_counts.get(code, 0)}
                 for code, label in Assessment.WorkflowStatus.choices
             ]
             from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
@@ -3449,8 +3489,11 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 | Q(user__last_name__icontains=search)
             )
 
+        from django.core.paginator import Paginator
+        paginator = Paginator(students_qs, 25)
+        page_obj = paginator.get_page(self.request.GET.get("page"))
         context.update({
-            "school": school, "students": students_qs, "search": search,
+            "school": school, "students": page_obj, "page_obj": page_obj, "search": search,
             "classes": Class.objects.filter(school=school, is_active=True) if school else [],
             "transport_routes": FeeStructureTransport.objects.filter(
                 structure__school=school, structure__academic_year__is_current=True,

@@ -265,7 +265,7 @@ class AcademicYear(models.Model):
     name = models.CharField(max_length=20, help_text="e.g. '2026/2027'")
     start_date = models.DateField()
     end_date = models.DateField()
-    is_current = models.BooleanField(default=False)
+    is_current = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -304,7 +304,7 @@ class Term(models.Model):
     term_number = models.PositiveSmallIntegerField()
     start_date = models.DateField()
     end_date = models.DateField()
-    is_current = models.BooleanField(default=False)
+    is_current = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -493,7 +493,7 @@ class Student(models.Model):
     transport_period = models.CharField(max_length=10, choices=[("NONE", "Not applicable"), ("MORNING", "Morning"), ("EVENING", "Evening"), ("BOTH", "Morning and evening")], default="NONE", blank=True)
     transport_route = models.CharField(max_length=150, blank=True)
     takes_coding_robotics = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -595,7 +595,7 @@ class Staff(models.Model):
     national_id = models.CharField(max_length=50, blank=True)
     emergency_contact_name = models.CharField(max_length=150, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, blank=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1199,6 +1199,7 @@ class Assessment(models.Model):
 
     is_published = models.BooleanField(
         default=False,
+        db_index=True,
         help_text="Marks visible to students/parents. Set automatically "
                    "when workflow_status reaches PUBLISHED — do not set "
                    "this directly, use services.transition_assessment_workflow().",
@@ -2010,7 +2011,7 @@ class FeeStructure(models.Model):
     name = models.CharField(max_length=150)
     paybill_number = models.CharField(max_length=30, blank=True)
     account_number = models.CharField(max_length=50, blank=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -2149,8 +2150,8 @@ class Invoice(models.Model):
     )
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.UNPAID, db_index=True)
-    issue_date = models.DateField()
-    due_date = models.DateField()
+    issue_date = models.DateField(db_index=True)
+    due_date = models.DateField(db_index=True)
     created_by = models.ForeignKey(
         "smsApp.User", on_delete=models.SET_NULL, related_name="invoices_created",
         blank=True, null=True,
@@ -2160,6 +2161,10 @@ class Invoice(models.Model):
     class Meta:
         db_table = "invoices"
         ordering = ["-issue_date"]
+        indexes = [
+            models.Index(fields=['student', 'status'], name='invoice_student_status_idx'),
+            models.Index(fields=['school', 'status'], name='invoice_school_status_idx'),
+        ]
         constraints = [
             models.CheckConstraint(condition=models.Q(total_amount__gte=0), name="invoice_total_non_negative"),
         ]
@@ -2244,8 +2249,8 @@ class Payment(models.Model):
     )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=15, choices=Method.choices)
-    gateway_reference = models.CharField(max_length=100, blank=True)
-    status = models.CharField(max_length=15, choices=Status.choices, default=Status.COMPLETED)
+    gateway_reference = models.CharField(max_length=100, blank=True, db_index=True)
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.COMPLETED, db_index=True)
     payer_name = models.CharField(
         max_length=150, blank=True,
         help_text="Who physically paid (may differ from the student), e.g. a guardian's name.",
@@ -2255,12 +2260,15 @@ class Payment(models.Model):
         blank=True, null=True,
     )
     notes = models.CharField(max_length=255, blank=True)
-    payment_date = models.DateTimeField()
+    payment_date = models.DateTimeField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "payments"
         ordering = ["-payment_date"]
+        indexes = [
+            models.Index(fields=['status', 'payment_date'], name='payment_status_date_idx'),
+        ]
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="payment_amount_positive"),
         ]
@@ -2288,6 +2296,9 @@ class PaymentAllocation(models.Model):
 
     class Meta:
         db_table = "payment_allocations"
+        indexes = [
+            models.Index(fields=['invoice'], name='allocation_invoice_idx'),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["payment", "invoice"], name="uniq_payment_invoice_allocation"
@@ -2348,7 +2359,7 @@ class Refund(models.Model):
     payment = models.ForeignKey(Payment, on_delete=models.PROTECT, related_name="refunds")
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     reason = models.TextField()
-    status = models.CharField(max_length=15, choices=Status.choices, default=Status.REQUESTED)
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.REQUESTED, db_index=True)
     requested_by = models.ForeignKey(
         "smsApp.User", on_delete=models.SET_NULL, related_name="refunds_requested",
         blank=True, null=True,
@@ -2856,6 +2867,7 @@ class Notification(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["recipient", "is_read", "created_at"], name="notif_recipient_read_idx"),
+            models.Index(fields=['recipient', '-created_at'], name='notif_recipient_created_idx'),
         ]
 
     def __str__(self) -> str:
