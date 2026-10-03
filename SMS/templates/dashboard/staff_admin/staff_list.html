@@ -51,7 +51,7 @@
                 <td>{{ s.user.get_full_name|default:s.user.username }}</td>
                 <td>{{ s.department|default:"—" }}</td>
                 <td>{{ s.job_title }}</td>
-                <td>{{ s.salary|default:"0.00" }}</td>
+                <td>Ksh {{ s.salary|default:"0.00" }}</td>
                 <td><span class="badge {% if s.is_active %}bg-success{% else %}bg-secondary{% endif %}">{{ s.get_employment_status_display }}</span></td>
                 <td class="text-end">
                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:staff_admin_staff_detail' s.pk %}">View</a>

@@ -16,9 +16,9 @@
             <div class="text-muted small">{{ family.guardian.phone_number }}{% if family.guardian.email %} &middot; {{ family.guardian.email }}{% endif %}</div>
         </div>
         <div class="text-end small">
-            <div>Billed: <strong>{{ family.total_billed }}</strong></div>
-            <div>Paid: <strong>{{ family.total_paid }}</strong></div>
-            <div>Balance: <strong class="text-danger">{{ family.outstanding_balance }}</strong></div>
+            <div>Billed: <strong>Ksh {{ family.total_billed }}</strong></div>
+            <div>Paid: <strong>Ksh {{ family.total_paid }}</strong></div>
+            <div>Balance: <strong class="text-danger">Ksh {{ family.outstanding_balance }}</strong></div>
         </div>
     </div>
 
@@ -31,9 +31,9 @@
                 <tr>
                     <td>{{ row.student.user.get_full_name|default:row.student.user.username }}</td>
                     <td>{{ row.student.admission_number }}</td>
-                    <td>{{ row.total_billed }}</td>
-                    <td>{{ row.total_paid }}</td>
-                    <td class="{% if row.outstanding_balance > 0 %}text-danger{% endif %}">{{ row.outstanding_balance }}</td>
+                    <td>Ksh {{ row.total_billed }}</td>
+                    <td>Ksh {{ row.total_paid }}</td>
+                    <td class="{% if row.outstanding_balance > 0 %}text-danger{% endif %}">Ksh {{ row.outstanding_balance }}</td>
                 </tr>
             {% empty %}
                 <tr><td colspan="5" class="text-muted">No children are linked to this family.</td></tr>
@@ -61,7 +61,7 @@
                 {% for invoice in family.invoices %}
                     <tr>
                         <td>{{ invoice.student.user.get_full_name|default:invoice.student.user.username }} &middot; {{ invoice.invoice_number }}</td>
-                        <td>{{ invoice.total_amount }}</td>
+                        <td>Ksh {{ invoice.total_amount }}</td>
                         <td>
                             <input type="hidden" name="invoice_id" value="{{ invoice.pk }}">
                             <input name="allocation_{{ invoice.pk }}" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">

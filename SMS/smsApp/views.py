@@ -477,10 +477,14 @@ class StudentRequiredMixin(RoleRequiredMixin):
     def get_student(self, request) -> Student:
         if request.user.role == User.Role.PARENT:
             child = get_children_for_guardian(guardian_user=request.user).select_related("user", "current_class").first()
-            if child is None:
-                raise Http404("No student is linked to this parent account.")
             return child
         return get_object_or_404(Student, user=request.user)
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and request.user.role == User.Role.PARENT and not get_children_for_guardian(guardian_user=request.user).exists():
+            if request.resolver_match.url_name != "student_dashboard":
+                return redirect("dashboard:student_dashboard")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_current_term(self, student: Student) -> Term | None:
         return Term.objects.filter(
@@ -499,6 +503,16 @@ class StudentDashboardView(StudentRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         student = self.get_student(self.request)
+        if student is None:
+            context.update({
+                "student": None, "current_term": None, "average": None,
+                "pending_assignments": 0,
+                "account_summary": {"outstanding_balance": Decimal("0")},
+                "unread_notifications": Notification.objects.filter(
+                    recipient=self.request.user, is_read=False
+                ).count(),
+            })
+            return context
         term = self.get_current_term(student)
 
         average = None

@@ -1485,8 +1485,8 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
     """Calculate the current term's tuition directly from the class structure.
 
     A structure may cover several classes (for example Grades 7–9). The
-    dashboard total is required tuition for the active term; optional and
-    transport charges are shown separately in the personalized PDF.
+    dashboard total includes active-term tuition, opted-in optional charges,
+    and the selected transport route when applicable.
     """
     from .models import FeeStructure
     from django.db.models import Q
@@ -1524,21 +1524,35 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
     current_total = Decimal("0")
     for structure in selected:
         for item in structure.items.all():
-            # The parent dashboard's billed card represents required tuition
-            # only. Optional classes and transport remain visible in the PDF.
-            if item.section == item.Section.OPTIONAL:
+            if item.section == item.Section.OPTIONAL and not student.takes_coding_robotics:
                 continue
-            amounts = [item.term_1_amount, item.term_2_amount, item.term_3_amount]
             amount = getattr(item, term_field)
             current_total += amount
             items.append({"structure": structure, "item": item, "amount": amount})
+
+    transport = None
+    if student.transport_option != "NONE" and student.transport_route:
+        for structure in selected:
+            transport = next(
+                (option for option in structure.transport_options.all()
+                 if option.route_name.strip().casefold() == student.transport_route.strip().casefold()),
+                None,
+            )
+            if transport:
+                break
+        if transport:
+            transport_amount = (
+                transport.two_way_amount if student.transport_option == "TWO_WAY"
+                else transport.one_way_amount
+            )
+            current_total += transport_amount
 
     return {
         "structure": selected[0] if len(selected) == 1 else None,
         "structures": selected,
         "total": current_total,
         "items": items,
-        "transport": None,
+        "transport": transport,
         "term": current_term,
         "term_totals": [current_total if index == current_term_index else Decimal("0") for index in range(3)],
     }

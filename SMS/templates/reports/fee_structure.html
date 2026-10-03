@@ -33,8 +33,8 @@
   <table>
     <thead><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
     <tbody>
-      {% for item in items %}<tr><td>{{ item.display_particulars }}</td><td class="right">{{ item.term_1_amount }}</td><td class="right">{{ item.term_2_amount }}</td><td class="right">{{ item.term_3_amount }}</td></tr>{% endfor %}
-      <tr><th>Total</th>{% for total in tuition_term_totals %}<th class="right">{{ total }}</th>{% endfor %}</tr>
+      {% for item in items %}<tr><td>{{ item.display_particulars }}</td><td class="right">Ksh {{ item.term_1_amount }}</td><td class="right">Ksh {{ item.term_2_amount }}</td><td class="right">Ksh {{ item.term_3_amount }}</td></tr>{% endfor %}
+      <tr><th>Total</th>{% for total in tuition_term_totals %}<th class="right">Ksh {{ total }}</th>{% endfor %}</tr>
     </tbody>
   </table>
 
@@ -43,7 +43,7 @@
     <table>
       <thead><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
       <tbody>
-        {% for item in optional_items %}<tr><td>{{ item.display_particulars }}</td><td class="right">{{ item.term_1_amount }}</td><td class="right">{{ item.term_2_amount }}</td><td class="right">{{ item.term_3_amount }}</td></tr>{% endfor %}
+        {% for item in optional_items %}<tr><td>{{ item.display_particulars }}</td><td class="right">Ksh {{ item.term_1_amount }}</td><td class="right">Ksh {{ item.term_2_amount }}</td><td class="right">Ksh {{ item.term_3_amount }}</td></tr>{% endfor %}
       </tbody>
     </table>
   {% endif %}
@@ -53,14 +53,14 @@
       <h3 class="section-title">Transport — {{ student.transport_route }}</h3>
       <table>
         <thead><tr><th>Route / option</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
-        <tbody>{% for row in transport_rows %}<tr><td>{{ row.particulars }}</td><td class="right">{{ row.term_1_amount }}</td><td class="right">{{ row.term_2_amount }}</td><td class="right">{{ row.term_3_amount }}</td></tr>{% endfor %}</tbody>
+        <tbody>{% for row in transport_rows %}<tr><td>{{ row.particulars }}</td><td class="right">Ksh {{ row.term_1_amount }}</td><td class="right">Ksh {{ row.term_2_amount }}</td><td class="right">Ksh {{ row.term_3_amount }}</td></tr>{% endfor %}</tbody>
       </table>
     {% endif %}
   {% elif transport_rows %}
     <h3 class="section-title">Transport routes (per term)</h3>
     <table>
       <thead><tr><th>Route</th><th>One way</th><th>Two way</th></tr></thead>
-      <tbody>{% for row in transport_rows %}<tr><td>{{ row.particulars }}</td><td class="right">{{ row.term_1_amount }}</td><td class="right">{{ row.two_way_amount }}</td></tr>{% endfor %}</tbody>
+      <tbody>{% for row in transport_rows %}<tr><td>{{ row.particulars }}</td><td class="right">Ksh {{ row.term_1_amount }}</td><td class="right">Ksh {{ row.two_way_amount }}</td></tr>{% endfor %}</tbody>
     </table>
   {% endif %}
 

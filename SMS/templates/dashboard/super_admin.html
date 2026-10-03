@@ -54,7 +54,7 @@
         <div class="card sms-stat-card p-3">
             <div class="text-muted small">Fees Collected</div>
             <div class="fs-5 fw-semibold">
-                {% if financial_summary %}{{ financial_summary.total_collected|default:"0" }}{% else %}—{% endif %}
+                {% if financial_summary %}Ksh {{ financial_summary.total_collected|default:"0" }}{% else %}—{% endif %}
             </div>
         </div>
     </div>
@@ -62,7 +62,7 @@
         <div class="card sms-stat-card p-3">
             <div class="text-muted small">Outstanding Fees</div>
             <div class="fs-5 fw-semibold {% if financial_summary.outstanding_balance %}text-danger{% endif %}">
-                {% if financial_summary %}{{ financial_summary.outstanding_balance|default:"0" }}{% else %}—{% endif %}
+                {% if financial_summary %}Ksh {{ financial_summary.outstanding_balance|default:"0" }}{% else %}—{% endif %}
             </div>
         </div>
     </div>

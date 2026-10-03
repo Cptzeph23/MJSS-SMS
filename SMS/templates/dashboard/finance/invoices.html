@@ -65,7 +65,7 @@
                 <td>{{ invoice.invoice_number }}</td>
                 <td>{{ invoice.student.admission_number }} — {{ invoice.student.user.get_full_name|default:invoice.student.user.username }}</td>
                 <td>{{ invoice.academic_year }} - {{ invoice.term }}</td>
-                <td>{{ invoice.total_amount }}</td>
+                <td>Ksh {{ invoice.total_amount }}</td>
                 <td><span class="badge bg-secondary">{{ invoice.get_status_display }}</span></td>
                 <td class="text-end">
                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:finance_invoice_detail' invoice.pk %}">View</a>

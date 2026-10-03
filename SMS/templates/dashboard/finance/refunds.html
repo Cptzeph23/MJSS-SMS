@@ -21,7 +21,7 @@
                 <td>{{ r.refund_number }}</td>
                 <td>{{ r.payment.invoice.student.admission_number }} — {{ r.payment.invoice.student.user.get_full_name|default:r.payment.invoice.student.user.username }}</td>
                 <td>{{ r.payment.payment_number }}</td>
-                <td>{{ r.amount }}</td>
+                <td>Ksh {{ r.amount }}</td>
                 <td>{{ r.reason }}</td>
                 <td><span class="badge bg-secondary">{{ r.get_status_display }}</span></td>
                 <td class="text-end">
