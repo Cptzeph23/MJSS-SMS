@@ -106,6 +106,7 @@ from .services import (
     record_staff_attendance,
     pay_library_fine,
     record_payment,
+    record_family_payment,
     reject_assessment,
     reschedule_timetable_slot,
     request_refund,
@@ -3291,6 +3292,60 @@ class FinanceAdminDashboardTests(TestCase):
         self.assertEqual(response.status_code, 302)
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, Invoice.Status.PARTIALLY_PAID)
+
+    def test_family_payment_edit_updates_allocation_invoice_balance_and_audit(self):
+        guardian = Guardian.objects.create(
+            school=self.school, first_name="Mary", last_name="Parent",
+            relationship="Mother", phone_number="+254700000111",
+        )
+        StudentGuardian.objects.create(student=self.student, guardian=guardian)
+        invoice = generate_invoice_for_student(
+            student=self.student, fee_structure=self.structure,
+            academic_year=self.academic_year, term=self.term,
+            issued_by=self.finance_user, due_date=datetime.date(2026, 2, 1),
+        )
+        payment = record_family_payment(
+            guardian=guardian, amount=Decimal("10000"),
+            allocations=[(invoice, Decimal("10000"))],
+            payment_method=Payment.Method.CASH,
+            payment_date=datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc),
+            received_by=self.finance_user,
+        )
+
+        response = self.client.get(reverse("dashboard:finance_family_payment"))
+        self.assertContains(response, "Edit payment amounts")
+        response = self.client.post(reverse("dashboard:finance_family_payment"), {
+            "action": "update_payment", "guardian_id": guardian.pk,
+            "payment_id": payment.pk, "amount": "15000",
+            "payment_date": "2026-01-16T11:30",
+            "payment_method": Payment.Method.MPESA,
+            "payer_name": "Mary Parent", "reference": "MPESA-EDITED",
+            "notes": "Corrected receipt", "invoice_id": str(invoice.pk),
+            f"edit_allocation_{invoice.pk}": "15000",
+        })
+        self.assertEqual(response.status_code, 302)
+        payment.refresh_from_db()
+        invoice.refresh_from_db()
+        self.assertEqual(payment.amount, Decimal("15000"))
+        self.assertEqual(payment.payment_method, Payment.Method.MPESA)
+        self.assertEqual(payment.allocations.get(invoice=invoice).amount, Decimal("15000"))
+        self.assertEqual(invoice.status, Invoice.Status.PARTIALLY_PAID)
+        self.assertEqual(compute_student_account_summary(student=self.student)["total_paid"], Decimal("15000"))
+        self.assertTrue(AuditLog.objects.filter(
+            target_model="Payment", target_object_id=str(payment.pk),
+            description__startswith="Corrected family payment",
+        ).exists())
+
+    def test_deputy_cannot_edit_family_payment(self):
+        deputy = User.objects.create_user(
+            username="financeeditdeputy", password="pass12345", role=User.Role.DEPUTY_PRINCIPAL,
+        )
+        self.client.logout()
+        self.client.login(username=deputy.username, password="pass12345")
+        response = self.client.post(reverse("dashboard:finance_family_payment"), {
+            "action": "update_payment", "guardian_id": "1", "payment_id": "1",
+        })
+        self.assertEqual(response.status_code, 403)
 
     def test_overpayment_via_dashboard_is_accepted_for_carry_forward(self):
         invoice = generate_invoice_for_student(

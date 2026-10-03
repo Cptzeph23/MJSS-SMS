@@ -1398,11 +1398,25 @@ def _term_matches_q(term):
 
 
 def _recompute_invoice_status(invoice) -> None:
-    from .models import Invoice, Payment
+    from .models import Invoice, Payment, PaymentAllocation, Refund
 
-    paid_total = invoice.payments.filter(
-        status=Payment.Status.COMPLETED
+    direct_payments = Payment.objects.filter(invoice=invoice, status=Payment.Status.COMPLETED)
+    direct_paid = direct_payments.aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    direct_refunded = Refund.objects.filter(
+        payment__in=direct_payments, status=Refund.Status.COMPLETED,
     ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
+    allocations = PaymentAllocation.objects.filter(
+        invoice=invoice, payment__status=Payment.Status.COMPLETED,
+    ).select_related("payment").prefetch_related("payment__refunds")
+    allocated_paid = Decimal("0")
+    allocated_refunded = Decimal("0")
+    for allocation in allocations:
+        allocated_paid += allocation.amount
+        refund_total = sum((refund.amount for refund in allocation.payment.refunds.all()
+                            if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+        if refund_total and allocation.payment.amount:
+            allocated_refunded += refund_total * allocation.amount / allocation.payment.amount
+    paid_total = direct_paid + allocated_paid - direct_refunded - allocated_refunded
 
     if invoice.status == Invoice.Status.CANCELLED:
         return
@@ -1954,6 +1968,106 @@ def record_family_payment(*, guardian, amount: Decimal, allocations: list[tuple]
         _recompute_invoice_status(invoice)
     Receipt.objects.create(payment=payment, issued_by=received_by)
     log_audit(actor=received_by, action=AuditLog.Action.CREATE, request=request, target_model="Payment", target_object_id=payment.pk, description=f"Recorded family payment {payment.payment_number} for {guardian}", new_value={"amount": str(amount), "method": payment_method, "allocations": [{"invoice": i.invoice_number, "amount": str(v)} for i, v in normalized]})
+    return payment
+
+
+@transaction.atomic
+def update_family_payment(
+    *, payment, guardian, amount: Decimal, allocations: list[tuple],
+    payment_method: str, payment_date, edited_by: User,
+    payer_name: str = "", reference: str = "", notes: str = "",
+    request: HttpRequest | None = None,
+):
+    """Correct a completed family payment and its invoice allocations safely."""
+    from .models import Invoice, Payment, PaymentAllocation, Refund
+
+    payment = Payment.objects.select_for_update().get(pk=payment.pk)
+    if payment.family_guardian_id != guardian.pk or payment.invoice_id is not None:
+        raise ValueError("This payment does not belong to the selected family account.")
+    if payment.status != Payment.Status.COMPLETED:
+        raise ValueError("Only completed family payments can be edited.")
+    if Refund.objects.filter(payment=payment).exists():
+        raise ValueError("This payment has a refund record and cannot be edited. Use the refund workflow for corrections.")
+    amount = Decimal(str(amount))
+    if amount <= 0:
+        raise ValueError("Payment amount must be positive.")
+    if payment_method not in Payment.Method.values:
+        raise ValueError("Select a valid payment method.")
+
+    children = Student.objects.filter(
+        school=guardian.school, studentguardian__guardian=guardian,
+    ).distinct()
+    child_ids = set(children.values_list("pk", flat=True))
+    normalized, allocated_total, seen = [], Decimal("0"), set()
+    for invoice, value in allocations:
+        value = Decimal(str(value))
+        if invoice.student_id not in child_ids or invoice.school_id != guardian.school_id:
+            raise ValueError("Every allocation must belong to this family's child and school.")
+        if invoice.status == Invoice.Status.CANCELLED:
+            raise ValueError("Cancelled invoices cannot receive payment allocations.")
+        if invoice.pk in seen:
+            raise ValueError("An invoice may only appear once in the allocations.")
+        if value <= 0:
+            raise ValueError("Allocation amounts must be positive.")
+        normalized.append((invoice, value))
+        seen.add(invoice.pk)
+        allocated_total += value
+    if not normalized:
+        raise ValueError("At least one child invoice allocation is required.")
+    if allocated_total != amount:
+        raise ValueError("Payment amount must equal the sum of its allocations.")
+
+    previous_allocations = list(PaymentAllocation.objects.filter(
+        payment=payment,
+    ).select_related("invoice"))
+    previous_state = {
+        "amount": str(payment.amount), "payment_method": payment.payment_method,
+        "payment_date": payment.payment_date.isoformat(),
+        "allocations": [{"invoice": item.invoice.invoice_number, "amount": str(item.amount)}
+                        for item in previous_allocations],
+    }
+    affected_invoice_ids = {item.invoice_id for item in previous_allocations}
+    affected_invoice_ids.update(invoice.pk for invoice, _ in normalized)
+
+    payment.amount = amount
+    payment.payment_method = payment_method
+    payment.payment_date = payment_date
+    payment.payer_name = payer_name
+    payment.gateway_reference = reference
+    payment.notes = notes
+    payment.received_by = edited_by
+    payment.save(update_fields=[
+        "amount", "payment_method", "payment_date", "payer_name",
+        "gateway_reference", "notes", "received_by",
+    ])
+
+    existing = {item.invoice_id: item for item in previous_allocations}
+    for invoice, value in normalized:
+        allocation = existing.pop(invoice.pk, None)
+        if allocation:
+            allocation.amount = value
+            allocation.save(update_fields=["amount"])
+        else:
+            PaymentAllocation.objects.create(payment=payment, invoice=invoice, amount=value)
+    for allocation in existing.values():
+        allocation.delete()
+
+    affected_invoices = Invoice.objects.filter(pk__in=affected_invoice_ids)
+    for invoice in affected_invoices:
+        _recompute_invoice_status(invoice)
+
+    log_audit(
+        actor=edited_by, action=AuditLog.Action.UPDATE, request=request,
+        target_model="Payment", target_object_id=payment.pk,
+        description=f"Corrected family payment {payment.payment_number} for {guardian}",
+        previous_value=previous_state,
+        new_value={
+            "amount": str(amount), "payment_method": payment_method,
+            "payment_date": payment.payment_date.isoformat(),
+            "allocations": [{"invoice": invoice.invoice_number, "amount": str(value)}
+                            for invoice, value in normalized],
+        },
+    )
     return payment
 
 

@@ -2,7 +2,7 @@
 import csv
 import io
 import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -129,6 +129,7 @@ from .services import (
     record_login,
     record_payment,
     record_family_payment,
+    update_family_payment,
     assign_fee_structure_to_class,
     build_parent_academic_history,
     build_student_financial_history,
@@ -2417,11 +2418,27 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
                 ).exclude(status=Invoice.Status.CANCELLED).select_related(
                     "student__user"
                 ).order_by("student_id", "issue_date")
+                invoice_list = list(invoices)
+                family_payments = list(Payment.objects.filter(
+                    family_guardian=guardian, invoice__isnull=True,
+                ).select_related("received_by").prefetch_related(
+                    "allocations__invoice__student__user", "refunds",
+                ).order_by("-payment_date"))
+                for payment in family_payments:
+                    allocations_by_invoice = {
+                        allocation.invoice_id: allocation.amount
+                        for allocation in payment.allocations.all()
+                    }
+                    payment.edit_allocation_rows = [{
+                        "invoice": invoice,
+                        "amount": allocations_by_invoice.get(invoice.pk, ""),
+                    } for invoice in invoice_list]
                 families.append({
                     "guardian": guardian,
                     "children": children,
                     "child_balances": summary["children"],
-                    "invoices": invoices,
+                    "invoices": invoice_list,
+                    "payments": family_payments,
                     "total_billed": summary["total_billed"],
                     "total_paid": summary["total_paid"],
                     "outstanding_balance": summary["outstanding_balance"],
@@ -2436,11 +2453,55 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
                     Payment.Method.MOBILE_MONEY, Payment.Method.MPESA,
                 }
             ],
+            "can_edit_family_payments": self.request.user.role in {
+                User.Role.PRINCIPAL_DIRECTOR, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
+            },
         })
         return context
 
     def post(self, request):
         school = self.get_school(request)
+        if request.POST.get("action") == "update_payment":
+            if request.user.role not in {
+                User.Role.PRINCIPAL_DIRECTOR, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
+            }:
+                return HttpResponseForbidden("Only the principal/manager or finance officer can edit family payments.")
+            guardian = get_object_or_404(
+                Guardian, pk=request.POST.get("guardian_id"), school=school,
+            )
+            payment = get_object_or_404(
+                Payment, pk=request.POST.get("payment_id"), family_guardian=guardian,
+                invoice__isnull=True,
+            )
+            allocations = []
+            try:
+                for invoice_id in request.POST.getlist("invoice_id"):
+                    raw_amount = request.POST.get(f"edit_allocation_{invoice_id}", "").strip()
+                    if not raw_amount or Decimal(raw_amount) == 0:
+                        continue
+                    invoice = get_object_or_404(
+                        Invoice, pk=invoice_id, school=school,
+                        student__studentguardian__guardian=guardian,
+                    )
+                    allocations.append((invoice, Decimal(raw_amount)))
+                payment_date_value = datetime.datetime.fromisoformat(
+                    request.POST.get("payment_date", "").strip()
+                )
+                if timezone.is_naive(payment_date_value):
+                    payment_date_value = timezone.make_aware(payment_date_value)
+                update_family_payment(
+                    payment=payment, guardian=guardian,
+                    amount=Decimal(request.POST.get("amount")), allocations=allocations,
+                    payment_method=request.POST.get("payment_method"),
+                    payment_date=payment_date_value, edited_by=request.user,
+                    payer_name=request.POST.get("payer_name", ""),
+                    reference=request.POST.get("reference", ""),
+                    notes=request.POST.get("notes", ""), request=request,
+                )
+            except (ValueError, TypeError, InvalidOperation) as exc:
+                return HttpResponseForbidden(str(exc))
+            return redirect("dashboard:finance_family_payment")
+
         guardian = get_object_or_404(
             Guardian, pk=request.POST.get("guardian_id"), school=school, is_active=True
         )
