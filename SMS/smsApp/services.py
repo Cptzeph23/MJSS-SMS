@@ -1482,17 +1482,24 @@ def apply_financial_adjustment(
 
 
 def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]:
-    """Calculate the current annual fee directly from the class structure.
+    """Calculate the current term's tuition directly from the class structure.
 
-    A structure may cover several classes (for example Grades 7–9). Optional
-    coding/robotics and transport rows are included only when the student's
-    registration preferences select them.
+    A structure may cover several classes (for example Grades 7–9). The
+    dashboard total is required tuition for the active term; optional and
+    transport charges are shown separately in the personalized PDF.
     """
     from .models import FeeStructure
     from django.db.models import Q
 
-    if not student.current_class_id:
-        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None}
+    from .models import Term
+
+    current_term = Term.objects.filter(
+        academic_year__school=student.school, academic_year__is_current=True,
+        is_current=True,
+    ).first()
+    if not student.current_class_id or current_term is None or current_term.term_number not in (1, 2, 3):
+        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None,
+                "structures": [], "term": current_term}
     structures = list(
         FeeStructure.objects.filter(
             school=student.school, academic_year__is_current=True, is_active=True,
@@ -1501,55 +1508,53 @@ def compute_student_fee_structure_summary(*, student: Student) -> dict[str, Any]
         .distinct().order_by("term__term_number", "-created_at")
     )
     if not structures:
-        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None}
+        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None,
+                "structures": [], "term": current_term}
 
     # Prefer one annual structure. If a school configured one structure per
     # term instead, sum the term structures without requiring invoices.
     annual = [structure for structure in structures if structure.term_id is None]
-    selected = annual[:1] or structures
+    selected = annual[:1] or [structure for structure in structures if structure.term_id == current_term.pk]
+    if not selected:
+        return {"structure": None, "total": Decimal("0"), "items": [], "transport": None,
+                "structures": [], "term": current_term}
     items = []
-    term_totals = [Decimal("0"), Decimal("0"), Decimal("0")]
+    current_term_index = current_term.term_number - 1
+    term_field = f"term_{current_term.term_number}_amount"
+    current_total = Decimal("0")
     for structure in selected:
         for item in structure.items.all():
-            if item.section == item.Section.OPTIONAL and not student.takes_coding_robotics:
+            # The parent dashboard's billed card represents required tuition
+            # only. Optional classes and transport remain visible in the PDF.
+            if item.section == item.Section.OPTIONAL:
                 continue
             amounts = [item.term_1_amount, item.term_2_amount, item.term_3_amount]
-            term_totals = [current + amount for current, amount in zip(term_totals, amounts, strict=True)]
-            items.append({"structure": structure, "item": item, "amount": sum(amounts, Decimal("0"))})
-
-    transport = None
-    if student.transport_option != "NONE" and student.transport_route:
-        for structure in selected:
-            transport = next(
-                (option for option in structure.transport_options.all()
-                 if option.route_name.strip().lower() == student.transport_route.strip().lower()),
-                None,
-            )
-            if transport:
-                break
-        if transport:
-            amount = transport.two_way_amount if student.transport_option == "TWO_WAY" else transport.one_way_amount
-            term_totals = [current + amount for current in term_totals]
-
-    total = sum(term_totals, Decimal("0"))
+            amount = getattr(item, term_field)
+            current_total += amount
+            items.append({"structure": structure, "item": item, "amount": amount})
 
     return {
         "structure": selected[0] if len(selected) == 1 else None,
         "structures": selected,
-        "total": total,
+        "total": current_total,
         "items": items,
-        "transport": transport,
-        "term_totals": term_totals,
+        "transport": None,
+        "term": current_term,
+        "term_totals": [current_total if index == current_term_index else Decimal("0") for index in range(3)],
     }
 
 
-def _student_paid_total(*, student: Student) -> Decimal:
+def _student_paid_total(*, student: Student, term=None) -> Decimal:
     from .models import Payment, PaymentAllocation
+    invoices = student.invoices.exclude(status="CANCELLED")
+    if term is not None:
+        invoices = invoices.filter(academic_year=term.academic_year, term=term)
+    invoice_ids = invoices.values("pk")
     direct = Payment.objects.filter(
-        invoice__student=student, status=Payment.Status.COMPLETED
+        invoice_id__in=invoice_ids, status=Payment.Status.COMPLETED
     ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
     allocated = PaymentAllocation.objects.filter(
-        invoice__student=student, payment__status=Payment.Status.COMPLETED
+        invoice_id__in=invoice_ids, payment__status=Payment.Status.COMPLETED
     ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
     return direct + allocated
 
@@ -1566,12 +1571,16 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
 
     structure_summary = compute_student_fee_structure_summary(student=student)
     invoices = Invoice.objects.filter(student=student).exclude(status=Invoice.Status.CANCELLED)
-    invoice_total = invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+    current_term = structure_summary.get("term")
+    current_term_invoices = invoices.filter(
+        academic_year=current_term.academic_year, term=current_term
+    ) if current_term else invoices.none()
+    invoice_total = current_term_invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
     total_billed = structure_summary["total"] if structure_summary["structure"] or structure_summary.get("structures") else invoice_total
-    total_paid = _student_paid_total(student=student)
+    total_paid = _student_paid_total(student=student, term=structure_summary.get("term"))
 
     today = timezone.localtime(timezone.now()).date()
-    arrears = invoices.filter(due_date__lt=today).exclude(status=Invoice.Status.PAID).aggregate(
+    arrears = current_term_invoices.filter(due_date__lt=today).exclude(status=Invoice.Status.PAID).aggregate(
         total=_sum("total_amount")
     )["total"] or Decimal("0")
     return {
@@ -1584,6 +1593,7 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
         "fee_items": structure_summary["items"],
         "fee_transport": structure_summary["transport"],
         "billed_from_fee_structure": bool(structure_summary["structure"] or structure_summary.get("structures")),
+        "current_term": structure_summary.get("term"),
     }
 
 

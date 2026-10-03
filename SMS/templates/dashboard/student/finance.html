@@ -9,6 +9,7 @@
 
 {% block content %}
 <h3 class="mb-4">Finance</h3>
+{% if account_summary.current_term %}<div class="text-muted mb-3">Current term: {{ account_summary.current_term.name }} — {{ account_summary.current_term.academic_year.name }}</div>{% endif %}
 
 <div class="row g-3 mb-4">
     <div class="col-md-4">
@@ -29,6 +30,11 @@
             <div class="fs-4 fw-semibold">{{ account_summary.outstanding_balance }}</div>
         </div>
     </div>
+</div>
+
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="d-flex justify-content-between align-items-center"><div><div class="fw-semibold">Fee structure</div><div class="small text-muted">View the full-year fee schedule and term totals.</div></div>
+    {% if request.user.role == "PARENT" %}{% for structure in fee_structures %}<a class="btn btn-outline-primary btn-sm" href="{% url 'dashboard:parent_fee_structure_pdf' student.pk structure.pk %}">View PDF{% if fee_structures|length > 1 %} — {{ structure.name }}{% endif %}</a>{% empty %}<span class="text-muted small">No fee structure published for this class.</span>{% endfor %}{% else %}<span class="text-muted small">Ask your parent or guardian to open the fee structure from their dashboard.</span>{% endif %}</div>
 </div>
 
 <div class="card sms-stat-card p-3 mb-4">

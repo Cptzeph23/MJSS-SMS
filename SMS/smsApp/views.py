@@ -1080,12 +1080,20 @@ class StudentFinanceView(StudentRequiredMixin, TemplateView):
             "invoice", "receipt"
         ).order_by("-payment_date")
         account_summary = compute_student_account_summary(student=student)
+        from django.db.models import Q
+        fee_structures = FeeStructure.objects.none()
+        if student.current_class_id:
+            fee_structures = FeeStructure.objects.filter(
+                school=student.school, academic_year__is_current=True, is_active=True,
+            ).filter(Q(class_groups=student.current_class) | Q(class_group=student.current_class)) \
+                .select_related("academic_year").distinct()
 
         context.update({
             "student": student,
             "invoices": invoices,
             "payments": payments,
             "account_summary": account_summary,
+            "fee_structures": fee_structures,
         })
         return context
 
