@@ -94,6 +94,7 @@ urlpatterns = [
         views.TeacherAnnouncementsView.as_view(), name="teacher_announcements",
     ),
     path("teacher/assessments/", views.TeacherAssessmentsView.as_view(), name="teacher_assessments"),
+    path("teacher/assessments/markbook/", views.TeacherMarkbookView.as_view(), name="teacher_markbook"),
     path(
         "teacher/assessments/<int:quiz_id>/attempts/",
         views.TeacherQuizAttemptsView.as_view(), name="teacher_quiz_attempts",

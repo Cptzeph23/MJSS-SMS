@@ -125,6 +125,7 @@ from .services import (
     mark_notification_read,
     reactivate_staff,
     record_assessment_marks,
+    record_teacher_markbook_marks,
     record_login,
     record_payment,
     record_family_payment,
@@ -1561,10 +1562,33 @@ class TeacherTimetableView(TeacherRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         staff = self.get_staff(self.request)
-        slots = TimetableSlot.objects.filter(teacher=staff).select_related(
+        current_term = Term.objects.filter(
+            academic_year__school=staff.school, academic_year__is_current=True, is_current=True,
+        ).first()
+        if current_term is None:
+            current_term = Term.objects.filter(
+                teaching_assignments__teacher=staff,
+            ).select_related("academic_year").order_by("-academic_year__start_date", "-term_number").first()
+        slots = TimetableSlot.objects.filter(teacher=staff)
+        if current_term:
+            slots = slots.filter(term=current_term)
+        slots = slots.select_related(
             "period", "class_group", "room", "teaching_assignment__class_subject__subject"
         ).order_by("day_of_week", "period__order")
-        context.update({"staff": staff, "slots": slots})
+        days = list(TimetableSlot.DayOfWeek.choices)
+        periods = list(Period.objects.filter(school=staff.school).order_by("order", "start_time"))
+        slots_by_day_period = {(slot.day_of_week, slot.period_id): slot for slot in slots}
+        schedule_rows = [
+            {"period": period, "cells": [
+                {"day": day_code, "slot": slots_by_day_period.get((day_code, period.pk))}
+                for day_code, _ in days
+            ]}
+            for period in periods
+        ]
+        context.update({
+            "staff": staff, "slots": slots, "days": days, "periods": periods,
+            "schedule_rows": schedule_rows, "schedule_term": current_term,
+        })
         return context
 
 
@@ -1890,6 +1914,81 @@ class TeacherAssessmentsView(TeacherRequiredMixin, TemplateView):
             quiz.save(update_fields=["overdue_reopened", "updated_at"])
             return redirect("dashboard:teacher_assessments")
         return HttpResponseForbidden("Teachers do not create assessments. The principal configures assessment structures.")
+
+
+class TeacherMarkbookView(TeacherRequiredMixin, View):
+    """Year-round, audited mark editing for classes the teacher taught."""
+    template_name = "dashboard/teacher/markbook.html"
+    active_nav = "assessments"
+
+    def get_assessments(self, staff):
+        return Assessment.objects.filter(
+            class_subject__teaching_assignments__teacher=staff,
+            class_subject__class_group__school=staff.school,
+        ).select_related(
+            "term__academic_year", "class_subject__class_group",
+            "class_subject__subject", "component__assessment_type",
+        ).distinct().order_by(
+            "-term__academic_year__start_date", "-term__term_number", "title",
+        )
+
+    def build_context(self, request, staff, assessment=None, error=None, submitted=None):
+        assessments = self.get_assessments(staff)
+        students, existing_marks, student_rows = [], {}, []
+        if assessment:
+            students = list(Student.objects.filter(
+                Q(enrollments__class_subject=assessment.class_subject,
+                  enrollments__academic_year=assessment.term.academic_year)
+                | Q(assessment_marks__assessment=assessment),
+                school=staff.school,
+            ).select_related("user").distinct().order_by("admission_number"))
+            existing_marks = {
+                mark.student_id: mark
+                for mark in AssessmentMark.objects.filter(assessment=assessment)
+            }
+            student_rows = [{
+                "student": student,
+                "mark": existing_marks.get(student.pk),
+                "value": (submitted.get(student.pk, "") if submitted is not None
+                          else existing_marks.get(student.pk).marks_obtained
+                          if existing_marks.get(student.pk) else ""),
+            } for student in students]
+        return {
+            "active": self.active_nav, "assessments": assessments,
+            "selected_assessment": assessment, "student_rows": student_rows,
+            "error": error,
+        }
+
+    def get(self, request):
+        staff = self.get_staff(request)
+        assessment = None
+        assessment_id = request.GET.get("assessment")
+        if assessment_id:
+            assessment = get_object_or_404(self.get_assessments(staff), pk=assessment_id)
+        return render(request, self.template_name, self.build_context(request, staff, assessment))
+
+    def post(self, request):
+        staff = self.get_staff(request)
+        assessment = get_object_or_404(
+            self.get_assessments(staff), pk=request.POST.get("assessment_id"),
+        )
+        marks, submitted = {}, {}
+        try:
+            for key, raw in request.POST.items():
+                if not key.startswith("mark_"):
+                    continue
+                student_id = int(key.removeprefix("mark_"))
+                submitted[student_id] = raw
+                if raw.strip():
+                    marks[student_id] = Decimal(raw)
+            record_teacher_markbook_marks(
+                assessment=assessment, teacher=staff, marks=marks, request=request,
+            )
+        except (ValueError, ArithmeticError) as exc:
+            return render(request, self.template_name,
+                          self.build_context(request, staff, assessment, error=str(exc), submitted=submitted),
+                          status=400)
+        return redirect(f"{reverse('dashboard:teacher_markbook')}?assessment={assessment.pk}")
 
 
 class TeacherQuizAttemptsView(TeacherRequiredMixin, View):

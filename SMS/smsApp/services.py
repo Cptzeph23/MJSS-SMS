@@ -2606,6 +2606,73 @@ def mark_attendance(
     return session
 
 
+@transaction.atomic
+def record_teacher_markbook_marks(
+    *, assessment: "Assessment", teacher: Staff,
+    marks: dict[int, Decimal], request: HttpRequest | None = None,
+):
+    """Save teacher markbook edits, including corrections to published terms.
+
+    Historical TeachingAssignments authorize access; each changed official
+    mark is audit logged, and published marks use the model's explicit lock
+    bypass only within this controlled service.
+    """
+    from .models import AssessmentMark, Enrollment, TeachingAssignment
+
+    authorized = TeachingAssignment.objects.filter(
+        teacher=teacher, class_subject=assessment.class_subject,
+        term=assessment.term, class_subject__class_group__school=teacher.school,
+    ).exists()
+    if not authorized:
+        raise ValueError("You are not assigned to teach this class and subject for that term.")
+
+    eligible_ids = set(Enrollment.objects.filter(
+        academic_year=assessment.term.academic_year,
+        class_subject=assessment.class_subject,
+        student__school=teacher.school,
+    ).values_list("student_id", flat=True))
+    existing_ids = set(AssessmentMark.objects.filter(
+        assessment=assessment,
+    ).values_list("student_id", flat=True))
+    allowed_ids = eligible_ids | existing_ids
+    updated = []
+
+    for student_id, mark_value in marks.items():
+        mark_value = Decimal(str(mark_value))
+        if student_id not in allowed_ids:
+            raise ValueError("A submitted student is not enrolled in this class for the assessment year.")
+        if mark_value < 0 or mark_value > assessment.component.max_marks:
+            raise ValueError(
+                f"Marks must be between 0 and {assessment.component.max_marks}."
+            )
+        record = AssessmentMark.objects.select_for_update().filter(
+            assessment=assessment, student_id=student_id,
+        ).first()
+        previous = record.marks_obtained if record else None
+        if record is None:
+            record = AssessmentMark(
+                assessment=assessment, student_id=student_id,
+                marks_obtained=mark_value, recorded_by=teacher.user,
+            )
+            record.save()
+        elif previous != mark_value:
+            record.marks_obtained = mark_value
+            record.recorded_by = teacher.user
+            record.save(update_fields=["marks_obtained", "recorded_by", "updated_at"],
+                        _bypass_publish_lock=True)
+        else:
+            continue
+        log_audit(
+            actor=teacher.user, action=AuditLog.Action.UPDATE if previous is not None else AuditLog.Action.CREATE,
+            request=request, target_model="AssessmentMark", target_object_id=record.pk,
+            description=f"Teacher markbook edit for {record.student} — {assessment}",
+            previous_value={"marks_obtained": str(previous)} if previous is not None else None,
+            new_value={"marks_obtained": str(mark_value), "assessment": assessment.title},
+        )
+        updated.append(record)
+    return updated
+
+
 def record_assessment_marks(
     *,
     assessment: "Assessment",

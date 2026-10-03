@@ -1,0 +1,42 @@
+{% extends "dashboard/teacher/_teacher_base.html" %}
+{% block title %}Year-round Markbook — SMS{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item"><a href="{% url 'dashboard:home' %}">Dashboard</a></li><li class="breadcrumb-item"><a href="{% url 'dashboard:teacher_assessments' %}">Assessments</a></li><li class="breadcrumb-item active">Markbook</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3"><div><h3 class="mb-1">Year-round Markbook</h3><p class="text-muted mb-0">Edit marks for assessments attached to your current or past teaching assignments. Changes to published marks are recorded in the audit log.</p></div></div>
+
+<form method="get" class="card sms-stat-card p-3 mb-3">
+    <label for="assessment-select" class="form-label fw-semibold">Assessment</label>
+    <div class="d-flex flex-column flex-sm-row gap-2">
+        <select class="form-select" id="assessment-select" name="assessment" required>
+            <option value="">Select a class, subject and assessment</option>
+            {% for assessment in assessments %}
+                <option value="{{ assessment.pk }}" {% if selected_assessment.pk == assessment.pk %}selected{% endif %}>{{ assessment.term.academic_year.name }} · {{ assessment.term.name }} · {{ assessment.class_subject.class_group.name }} · {{ assessment.class_subject.subject.name }} · {{ assessment.title }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-outline-primary" type="submit">Load class</button>
+    </div>
+    {% if not assessments %}<div class="small text-muted mt-2">No assessments are linked to your teaching history yet.</div>{% endif %}
+</form>
+
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if selected_assessment %}
+<div class="card sms-stat-card p-3">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div><h5 class="mb-1">{{ selected_assessment.class_subject.class_group.name }} — {{ selected_assessment.class_subject.subject.name }}</h5><div class="text-muted">{{ selected_assessment.term.academic_year.name }} · {{ selected_assessment.term.name }} · {{ selected_assessment.title }} · Maximum: {{ selected_assessment.component.max_marks }}</div></div>
+        <span class="badge text-bg-secondary">{{ selected_assessment.get_workflow_status_display }}</span>
+    </div>
+    <form method="post">
+        {% csrf_token %}<input type="hidden" name="assessment_id" value="{{ selected_assessment.pk }}">
+        <div class="table-responsive"><table class="table table-hover align-middle">
+            <thead><tr><th>Admission No.</th><th>Student</th><th>Mark / {{ selected_assessment.component.max_marks }}</th><th>Last recorded by</th><th>Last updated</th></tr></thead>
+            <tbody>{% for row in student_rows %}
+                <tr><td>{{ row.student.admission_number }}</td><td>{{ row.student.user.get_full_name|default:row.student.user.username }}</td>
+                    <td><input type="number" class="form-control" style="max-width:160px" name="mark_{{ row.student.pk }}" min="0" max="{{ selected_assessment.component.max_marks }}" step="0.01" value="{{ row.value }}" aria-label="Mark for {{ row.student }}"></td>
+                    <td>{% if row.mark.recorded_by %}{{ row.mark.recorded_by.get_full_name|default:row.mark.recorded_by.username }}{% else %}—{% endif %}</td><td>{% if row.mark %}{{ row.mark.updated_at|date:"d M Y, H:i" }}{% else %}—{% endif %}</td></tr>
+            {% empty %}<tr><td colspan="5" class="text-muted">No students are enrolled for this assessment year.</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% if student_rows %}<button class="btn btn-primary" type="submit"><i class="bi bi-save me-1"></i>Save marks</button>{% endif %}
+    </form>
+</div>
+{% endif %}
+{% endblock %}

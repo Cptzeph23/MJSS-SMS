@@ -1,4 +1,3 @@
-<!-- Absolute path: SMS/templates/dashboard/teacher/timetable.html -->
 {% extends "dashboard/teacher/_teacher_base.html" %}
 {% block title %}My Timetable — SMS{% endblock %}
 
@@ -8,23 +7,34 @@
 {% endblock %}
 
 {% block content %}
-<h3 class="mb-4">My Timetable</h3>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+    <div><h3 class="mb-1">My Weekly Timetable</h3>
+        {% if schedule_term %}<p class="text-muted mb-0">{{ schedule_term.academic_year.name }} · {{ schedule_term.name }}</p>{% endif %}
+    </div>
+</div>
 <div class="card sms-stat-card p-3">
-    <table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Day</th><th>Period</th><th>Class</th><th>Subject</th><th>Room</th></tr></thead>
-        <tbody>
-        {% for slot in slots %}
-            <tr>
-                <td>{{ slot.day_of_week }}</td>
-                <td>{{ slot.period.name }} ({{ slot.period.start_time }}&ndash;{{ slot.period.end_time }})</td>
-                <td>{{ slot.class_group }}</td>
-                <td>{{ slot.teaching_assignment.class_subject.subject.name }}</td>
-                <td>{{ slot.room|default:"—" }}</td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="5" class="text-muted">No timetable slots assigned yet.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle text-center mb-0">
+            <thead class="table-light"><tr><th class="text-start">Period / Time</th>{% for day_code, day_name in days %}<th>{{ day_name }}</th>{% endfor %}</tr></thead>
+            <tbody>
+            {% for row in schedule_rows %}
+                <tr>
+                    <th class="text-start text-nowrap {% if row.period.is_break %}table-warning{% endif %}">
+                        {{ row.period.name }}<div class="small fw-normal text-muted">{{ row.period.start_time|time:"g:i A" }}–{{ row.period.end_time|time:"g:i A" }}</div>
+                        {% if row.period.is_break %}<span class="badge text-bg-warning">Break</span>{% endif %}
+                    </th>
+                    {% for cell in row.cells %}
+                        <td class="{% if row.period.is_break %}table-warning{% endif %}" style="min-width:105px;min-height:54px">
+                            {% if cell.slot %}<div class="fw-semibold">{{ cell.slot.class_group.name }}</div><div class="small">{{ cell.slot.teaching_assignment.class_subject.subject.name }}</div>{% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-muted py-4">No school periods are configured yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if not schedule_rows %}<p class="text-muted small mt-3 mb-0">Once periods are configured, the full school day will appear here, including unassigned periods and breaks.</p>{% endif %}
 </div>
 {% endblock %}

@@ -2809,6 +2809,93 @@ class TeacherDashboardTests(TestCase):
         )
         self.assertContains(response, self.student.admission_number)
 
+    def test_timetable_shows_full_week_and_break_periods_with_empty_cells(self):
+        teaching_period = Period.objects.create(
+            school=self.school, name="Period 1", start_time=datetime.time(8),
+            end_time=datetime.time(8, 40), order=1,
+        )
+        break_period = Period.objects.create(
+            school=self.school, name="Morning Break", start_time=datetime.time(10),
+            end_time=datetime.time(10, 30), order=2, is_break=True,
+        )
+        TimetableSlot.objects.create(
+            teaching_assignment=self.teaching_assignment,
+            day_of_week=TimetableSlot.DayOfWeek.MONDAY, period=teaching_period,
+        )
+        response = self.client.get(reverse("dashboard:teacher_timetable"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["days"]), 6)
+        self.assertEqual(len(response.context["schedule_rows"]), 2)
+        self.assertIsNotNone(response.context["schedule_rows"][0]["cells"][0]["slot"])
+        self.assertIsNone(response.context["schedule_rows"][1]["cells"][0]["slot"])
+        self.assertContains(response, "Morning Break")
+        self.assertContains(response, "Saturday")
+
+    def test_markbook_updates_published_marks_for_a_past_teaching_term(self):
+        past_year = AcademicYear.objects.create(
+            school=self.school, name="2025",
+            start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 12, 31),
+        )
+        past_term = Term.objects.create(
+            academic_year=past_year, name="Term 3", term_number=3,
+            start_date=datetime.date(2025, 9, 1), end_date=datetime.date(2025, 12, 1),
+        )
+        TeachingAssignment.objects.create(
+            class_subject=self.class_subject, teacher=self.teacher, term=past_term,
+            is_active=False,
+        )
+        Enrollment.objects.create(
+            student=self.student, class_subject=self.class_subject, academic_year=past_year,
+            status=Enrollment.Status.COMPLETED,
+        )
+        assessment_structure = AssessmentStructure.objects.create(
+            school=self.school, term=past_term, name="Past results",
+        )
+        assessment_type = AssessmentType.objects.create(
+            school=self.school, name="End term", code="ET",
+        )
+        component = AssessmentComponent.objects.create(
+            structure=assessment_structure, assessment_type=assessment_type,
+            weight_percentage=100, max_marks=100,
+        )
+        assessment = Assessment.objects.create(
+            class_subject=self.class_subject, term=past_term, component=component,
+            title="End Term Exam", workflow_status=Assessment.WorkflowStatus.PUBLISHED,
+            is_published=True,
+        )
+        mark = AssessmentMark.objects.create(
+            assessment=assessment, student=self.student, marks_obtained=60,
+        )
+        response = self.client.post(reverse("dashboard:teacher_markbook"), {
+            "assessment_id": assessment.pk, f"mark_{self.student.pk}": "85",
+        })
+        self.assertEqual(response.status_code, 302)
+        mark.refresh_from_db()
+        self.assertEqual(mark.marks_obtained, Decimal("85"))
+        self.assertEqual(mark.recorded_by, self.teacher_user)
+        audit = AuditLog.objects.filter(
+            target_model="AssessmentMark", target_object_id=str(mark.pk),
+        ).first()
+        self.assertIsNotNone(audit)
+        self.assertEqual(Decimal(audit.previous_value["marks_obtained"]), Decimal("60"))
+        self.assertEqual(Decimal(audit.new_value["marks_obtained"]), Decimal("85"))
+
+    def test_markbook_cannot_open_another_teachers_assessment(self):
+        structure = AssessmentStructure.objects.create(school=self.school, term=self.term, name="Structure")
+        assessment_type = AssessmentType.objects.create(school=self.school, name="CAT", code="CATX")
+        component = AssessmentComponent.objects.create(
+            structure=structure, assessment_type=assessment_type,
+            weight_percentage=100, max_marks=100,
+        )
+        assessment = Assessment.objects.create(
+            class_subject=self.other_class_subject, term=self.term,
+            component=component, title="Not mine",
+        )
+        response = self.client.get(
+            reverse("dashboard:teacher_markbook"), {"assessment": assessment.pk},
+        )
+        self.assertEqual(response.status_code, 404)
+
     def test_cannot_access_roster_for_unassigned_class_subject(self):
         response = self.client.get(
             reverse("dashboard:teacher_class_roster", args=[self.other_class_subject.pk])
