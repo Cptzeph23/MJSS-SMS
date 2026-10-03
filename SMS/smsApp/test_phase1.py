@@ -65,13 +65,13 @@ class StudentImportTests(TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", newline="", delete=False) as source:
             writer = csv.DictWriter(
                 source, fieldnames=["username", "first_name", "last_name", "email",
-                                    "admission_number", "admission_date", "class_name"]
+                                    "admission_number", "admission_date", "gender", "class_name"]
             )
             writer.writeheader()
             writer.writerow({
                 "username": "imported", "first_name": "Ada", "last_name": "One",
                 "email": "ada@example.com", "admission_number": "IMP-001",
-                "admission_date": "2026-01-10", "class_name": "Grade 5",
+                "admission_date": "2026-01-10", "gender": "F", "class_name": "Grade 5",
             })
             path = Path(source.name)
         try:

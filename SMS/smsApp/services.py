@@ -3222,6 +3222,7 @@ def register_student(
     email: str,
     admission_number: str,
     admission_date,
+    gender="",
     current_class=None,
     current_stream=None,
     program=None,
@@ -3244,6 +3245,8 @@ def register_student(
         raise ValueError("The selected stream does not belong to the selected school.")
     if program is not None and program.school_id != school.pk:
         raise ValueError("The selected program does not belong to the selected school.")
+    if gender and gender not in Student.Gender.values:
+        raise ValueError("Select Male, Female, or Other for student gender.")
 
     new_user = User.objects.create_user(
         username=username, password=password or get_random_string(16),
@@ -3253,6 +3256,7 @@ def register_student(
     student = Student.objects.create(
         user=new_user, school=school, admission_number=admission_number,
         admission_date=admission_date, current_class=current_class,
+        gender=gender,
         current_stream=current_stream, program=program,
         transport_option=transport_option, transport_period=transport_period,
         transport_route=transport_route, takes_coding_robotics=takes_coding_robotics,

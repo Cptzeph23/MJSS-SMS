@@ -9,7 +9,7 @@
 
 {% block content %}
 <h3 class="mb-1">{{ student.user.get_full_name|default:student.user.username }}</h3>
-<div class="text-muted mb-4">{{ student.admission_number }} &middot; {{ current_term|default:"No active term" }}</div>
+<div class="text-muted mb-4">{{ student.admission_number }} &middot; {{ student.get_gender_display|default:"Gender not recorded" }} &middot; {{ current_term|default:"No active term" }}</div>
 
 <h5>Subjects & Grades</h5>
 <table class="table table-sm">

@@ -21,7 +21,7 @@
             <div class="d-flex justify-content-between align-items-start">
                 <div>
                     <h5 class="mb-1">{{ row.student.user.get_full_name|default:row.student.user.username }}</h5>
-                    <div class="text-muted small">{{ row.student.admission_number }} &middot; {{ row.student.current_class|default:"—" }}</div>
+                    <div class="text-muted small">{{ row.student.admission_number }} &middot; {{ row.student.get_gender_display|default:"Gender not recorded" }} &middot; {{ row.student.current_class|default:"—" }}</div>
                 </div>
                 <span class="badge bg-secondary">{{ row.current_term|default:"No active term" }}</span>
             </div>

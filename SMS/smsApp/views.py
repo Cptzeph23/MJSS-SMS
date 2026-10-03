@@ -61,6 +61,7 @@ from .models import (
     LeaveRequest,
     Notification,
     Payment,
+    PaymentAllocation,
     Period,
     Program,
     Quiz,
@@ -904,7 +905,10 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
                             )
                         elif role == User.Role.STUDENT:
                             admission = request.POST.get("admission_number", "").strip() or f"STU-{new_user.pk}"
-                            Student.objects.create(user=new_user, school=school, admission_number=admission, admission_date=datetime.date.today())
+                            gender = request.POST.get("gender", "")
+                            if gender not in Student.Gender.values:
+                                raise ValueError("Select Male, Female, or Other for student gender.")
+                            Student.objects.create(user=new_user, school=school, admission_number=admission, admission_date=datetime.date.today(), gender=gender)
                         elif role == User.Role.PARENT:
                             Guardian.objects.create(user=new_user, school=school, first_name=new_user.first_name or username, last_name=new_user.last_name, relationship=request.POST.get("relationship", "Parent"), phone_number=new_user.phone_number)
             except (IntegrityError, ValueError) as exc:
@@ -3315,6 +3319,9 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
         attendance = compute_school_attendance_summary(school=school) if school else {}
         class_rows = []
         assessment_rows = []
+        fee_class_chart = []
+        gender_chart = []
+        teachers_count = staff_count = 0
         if school:
             class_rows = list(
                 Class.objects.filter(school=school, is_active=True)
@@ -3328,12 +3335,90 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
                 ).count()}
                 for code, label in Assessment.WorkflowStatus.choices
             ]
+            from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
+            from django.db.models.functions import Coalesce
+
+            can_view_finance_chart = self.request.user.role == User.Role.PRINCIPAL_DIRECTOR
+            current_term = Term.objects.filter(academic_year__school=school, is_current=True).first() if can_view_finance_chart else None
+            grouped_fees = {}
+            if current_term:
+                money = DecimalField(max_digits=14, decimal_places=2)
+                zero = Value(Decimal("0"), output_field=money)
+                invoices = Invoice.objects.filter(
+                    school=school, term=current_term,
+                ).exclude(status=Invoice.Status.CANCELLED)
+                direct_paid = Payment.objects.filter(
+                    invoice_id=OuterRef("pk"), status=Payment.Status.COMPLETED,
+                ).order_by().values("invoice_id").annotate(total=Sum("amount")).values("total")[:1]
+                allocated_paid = PaymentAllocation.objects.filter(
+                    invoice_id=OuterRef("pk"), payment__status=Payment.Status.COMPLETED,
+                ).order_by().values("invoice_id").annotate(total=Sum("amount")).values("total")[:1]
+                direct_refunds = Refund.objects.filter(
+                    payment__invoice_id=OuterRef("pk"), payment__status=Payment.Status.COMPLETED,
+                    status=Refund.Status.COMPLETED,
+                ).order_by().values("payment__invoice_id").annotate(total=Sum("amount")).values("total")[:1]
+                allocated_refunds = Refund.objects.filter(
+                    payment__status=Payment.Status.COMPLETED,
+                    payment__allocations__invoice_id=OuterRef("pk"),
+                    status=Refund.Status.COMPLETED,
+                ).order_by().values("payment__allocations__invoice_id").annotate(
+                    total=Sum(ExpressionWrapper(
+                        F("amount") * F("payment__allocations__amount") / F("payment__amount"),
+                        output_field=money,
+                    ))
+                ).values("total")[:1]
+                invoices = invoices.annotate(
+                    _direct_paid=Coalesce(Subquery(direct_paid, output_field=money), zero),
+                    _allocated_paid=Coalesce(Subquery(allocated_paid, output_field=money), zero),
+                    _direct_refunds=Coalesce(Subquery(direct_refunds, output_field=money), zero),
+                    _allocated_refunds=Coalesce(Subquery(allocated_refunds, output_field=money), zero),
+                ).annotate(net_paid=ExpressionWrapper(
+                    F("_direct_paid") + F("_allocated_paid") - F("_direct_refunds") - F("_allocated_refunds"),
+                    output_field=money,
+                ))
+                grouped_fees = {
+                    row["student__current_class_id"]: row
+                    for row in invoices.values("student__current_class_id").annotate(
+                        total_billed=Sum("total_amount"), total_paid=Sum("net_paid"),
+                    )
+                }
+            fee_class_chart = [
+                {
+                    "name": row["name"],
+                    "total_billed": float(grouped_fees.get(row["id"], {}).get("total_billed") or 0),
+                    "total_paid": float(grouped_fees.get(row["id"], {}).get("total_paid") or 0),
+                }
+                for row in Class.objects.filter(school=school, is_active=True)
+                .order_by("level_order", "name").values("id", "name")
+            ] if can_view_finance_chart else []
+            gender_counts = {
+                row["gender"]: row["count"]
+                for row in Student.objects.filter(
+                    school=school, is_active=True, gender__in=Student.Gender.values,
+                ).values("gender").annotate(count=Count("pk"))
+            }
+            recorded_gender_total = sum(gender_counts.values())
+            gender_chart = [
+                {"label": label, "count": gender_counts.get(value, 0),
+                 "percentage": round(gender_counts.get(value, 0) * 100 / recorded_gender_total, 1) if recorded_gender_total else 0}
+                for value, label in Student.Gender.choices
+            ]
+            teachers_count = Staff.objects.filter(
+                school=school, is_active=True,
+                user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER],
+            ).count()
+            staff_count = Staff.objects.filter(school=school, is_active=True).count()
         context.update({
             "school": school,
             "summary": summary,
             "attendance_summary": attendance,
             "class_chart": class_rows,
             "assessment_chart": assessment_rows,
+            "fee_class_chart": fee_class_chart,
+            "gender_chart": gender_chart,
+            "teachers_count": teachers_count,
+            "staff_count": staff_count,
+            "student_gender_recorded": sum(item["count"] for item in gender_chart),
         })
         return context
 
@@ -3367,6 +3452,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 structure__school=school, structure__academic_year__is_current=True,
                 structure__is_active=True,
             ).values_list("route_name", flat=True).distinct().order_by("route_name") if school else [],
+            "gender_choices": Student.Gender.choices,
         })
         return context
 
@@ -3374,6 +3460,9 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
         if request.user.role == User.Role.DEPUTY_PRINCIPAL:
             return HttpResponseForbidden("Deputy Principals cannot register students.")
         school = self.get_school(request)
+        gender = request.POST.get("gender", "")
+        if gender not in Student.Gender.values:
+            return HttpResponseForbidden("Select Male, Female, or Other for student gender.")
         try:
             transport_option = request.POST.get("transport_option", "NONE")
             transport_period = request.POST.get("transport_period", "NONE")
@@ -3402,6 +3491,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 email=request.POST.get("email", ""),
                 admission_number=request.POST.get("admission_number", ""),
                 admission_date=request.POST.get("admission_date"),
+                gender=gender,
                 current_class=(
                     Class.objects.filter(pk=request.POST.get("current_class_id"), school=school).first()
                     if request.POST.get("current_class_id") else None
@@ -3424,8 +3514,8 @@ class AcademicAdminStudentImportTemplateView(AcademicAdminRequiredMixin, View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="student_import_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(["username", "first_name", "last_name", "email", "admission_number", "admission_date", "class_name", "status", "parent_phone", "parent_first_name", "parent_last_name", "parent_relationship"])
-        writer.writerow(["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "Grade 1", "ACTIVE", "+254700000000", "Mary", "Doe", "Mother"])
+        writer.writerow(["username", "first_name", "last_name", "email", "admission_number", "admission_date", "gender", "class_name", "status", "parent_phone", "parent_first_name", "parent_last_name", "parent_relationship"])
+        writer.writerow(["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "F", "Grade 1", "ACTIVE", "+254700000000", "Mary", "Doe", "Mother"])
         return response
 
 
@@ -3436,7 +3526,7 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
     class_name. Existing admission numbers are updated; new rows create the
     linked student login and place the student in the named class.
     """
-    required_columns = {"username", "admission_number", "admission_date", "class_name"}
+    required_columns = {"username", "admission_number", "admission_date", "gender", "class_name"}
 
     def get(self, request):
         return redirect("dashboard:academic_admin_students")
@@ -3497,6 +3587,12 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
                         admission_date = datetime.date.fromisoformat(row.get("admission_date", ""))
                     except ValueError as exc:
                         raise ValueError(f"Row {line}: admission_date must be YYYY-MM-DD.") from exc
+                    gender_aliases = {"f": Student.Gender.FEMALE, "female": Student.Gender.FEMALE,
+                                      "m": Student.Gender.MALE, "male": Student.Gender.MALE,
+                                      "o": Student.Gender.OTHER, "other": Student.Gender.OTHER}
+                    gender = gender_aliases.get(row.get("gender", "").casefold())
+                    if gender is None:
+                        raise ValueError(f"Row {line}: gender must be Female (F), Male (M), or Other (O).")
                     student = Student.objects.filter(school=school, admission_number=admission_number).select_related("user").first()
                     if student is None:
                         user = User.objects.filter(username=username).first()
@@ -3506,13 +3602,14 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
                             user = User.objects.create_user(username=username, password=get_random_string(16), role=User.Role.STUDENT)
                         elif user.role != User.Role.STUDENT:
                             raise ValueError(f"Row {line}: username belongs to a non-student user.")
-                        student = Student.objects.create(user=user, school=school, admission_number=admission_number, admission_date=admission_date, current_class=class_group)
+                        student = Student.objects.create(user=user, school=school, admission_number=admission_number, admission_date=admission_date, current_class=class_group, gender=gender)
                         created += 1
                     else:
                         updated += 1
                         student.current_class = class_group
                         student.admission_date = admission_date
-                        student.save(update_fields=["current_class", "admission_date", "updated_at"])
+                        student.gender = gender
+                        student.save(update_fields=["current_class", "admission_date", "gender", "updated_at"])
                     user = student.user
                     user.first_name = row.get("first_name", "")
                     user.last_name = row.get("last_name", "")
@@ -3673,6 +3770,7 @@ class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):
             "student": student, "active": self.active_nav,
             "guardians": guardians, "enrollments": enrollments,
             "status_choices": Student.Status.choices,
+            "gender_choices": Student.Gender.choices,
             "transport_routes": transport_routes,
         })
 
@@ -3681,6 +3779,18 @@ class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):
             return HttpResponseForbidden("Deputy Principals cannot change student status.")
         school = self.get_school(request)
         student = get_object_or_404(Student, pk=student_id, school=school)
+        if request.POST.get("action") == "update_gender":
+            gender = request.POST.get("gender", "")
+            if gender not in Student.Gender.values:
+                return HttpResponseForbidden("Select Male, Female, or Other for student gender.")
+            student.gender = gender
+            student.save(update_fields=["gender", "updated_at"])
+            log_audit(
+                actor=request.user, action=AuditLog.Action.UPDATE, request=request,
+                target_model="Student", target_object_id=student.pk,
+                description=f"Updated gender for {student}",
+            )
+            return redirect("dashboard:academic_admin_student_detail", student_id=student.pk)
         if request.POST.get("action") == "update_transport":
             transport_option = request.POST.get("transport_option", "NONE")
             transport_period = request.POST.get("transport_period", "NONE")

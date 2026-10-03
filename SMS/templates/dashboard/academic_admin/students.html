@@ -18,6 +18,7 @@
         <div class="col-md-2"><input type="text" name="first_name" class="form-control" placeholder="First name"></div>
         <div class="col-md-2"><input type="text" name="last_name" class="form-control" placeholder="Last name"></div>
         <div class="col-md-2"><input type="email" name="email" class="form-control" placeholder="Email"></div>
+        <div class="col-12"><span class="form-label d-block mb-1">Gender <span class="text-danger">*</span></span>{% for value,label in gender_choices %}<label class="form-check form-check-inline"><input class="form-check-input" type="radio" name="gender" value="{{ value }}" required><span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
         <div class="col-md-2"><input type="text" name="admission_number" class="form-control" placeholder="Admission #" required></div>
         <div class="col-md-2"><input type="date" name="admission_date" class="form-control" required></div>
         <div class="col-md-3">
@@ -36,7 +37,7 @@
     </form>
 </div>{% endif %}
 
-{% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4"><div class="text-muted small mb-2">Import existing students</div><p class="small text-muted mb-2">Upload an XLSX, CSV, or text-based PDF. Required columns: <code>username</code>, <code>admission_number</code>, <code>admission_date</code> (YYYY-MM-DD), and <code>class_name</code>. Optional family columns: <code>parent_phone</code>, <code>parent_first_name</code>, <code>parent_last_name</code>, and <code>parent_relationship</code>.</p><form method="post" action="{% url 'dashboard:academic_admin_student_import' %}" enctype="multipart/form-data" class="row g-2 align-items-center">{% csrf_token %}<div class="col-md-7"><input type="file" name="student_file" class="form-control" accept=".xlsx,.csv,.pdf" required></div><div class="col-md-3"><button class="btn btn-outline-primary w-100">Import students</button></div><div class="col-md-2"><a class="btn btn-outline-secondary w-100" href="{% url 'dashboard:academic_admin_student_import_template' %}">Download template</a></div></form></div>{% endif %}
+{% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4"><div class="text-muted small mb-2">Import existing students</div><p class="small text-muted mb-2">Upload an XLSX, CSV, or text-based PDF. Required columns: <code>username</code>, <code>admission_number</code>, <code>admission_date</code> (YYYY-MM-DD), <code>gender</code> (<code>F</code>, <code>M</code>, or <code>O</code>), and <code>class_name</code>. Optional family columns: <code>parent_phone</code>, <code>parent_first_name</code>, <code>parent_last_name</code>, and <code>parent_relationship</code>.</p><form method="post" action="{% url 'dashboard:academic_admin_student_import' %}" enctype="multipart/form-data" class="row g-2 align-items-center">{% csrf_token %}<div class="col-md-7"><input type="file" name="student_file" class="form-control" accept=".xlsx,.csv,.pdf" required></div><div class="col-md-3"><button class="btn btn-outline-primary w-100">Import students</button></div><div class="col-md-2"><a class="btn btn-outline-secondary w-100" href="{% url 'dashboard:academic_admin_student_import_template' %}">Download template</a></div></form></div>{% endif %}
 
 <form method="get" class="mb-3">
     <input type="text" name="q" class="form-control" style="max-width: 300px;" placeholder="Search admission # or name" value="{{ search }}">
@@ -45,13 +46,14 @@
 <div class="card sms-stat-card p-3">
     <table class="table table-hover align-middle mb-0">
         <thead>
-            <tr><th>Admission #</th><th>Name</th><th>Class</th><th>Stream</th><th>Status</th><th></th></tr>
+            <tr><th>Admission #</th><th>Name</th><th>Gender</th><th>Class</th><th>Stream</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
         {% for s in students %}
             <tr>
                 <td>{{ s.admission_number }}</td>
                 <td>{{ s.user.get_full_name|default:s.user.username }}</td>
+                <td>{{ s.get_gender_display|default:"Not recorded" }}</td>
                 <td>{{ s.current_class|default:"—" }}</td>
                 <td>{{ s.current_stream|default:"—" }}</td>
                 <td><span class="badge bg-secondary">{{ s.get_status_display }}</span></td>
@@ -60,7 +62,7 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="6" class="text-muted">No students found.</td></tr>
+            <tr><td colspan="7" class="text-muted">No students found.</td></tr>
         {% endfor %}
         </tbody>
     </table>

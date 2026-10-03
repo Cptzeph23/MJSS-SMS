@@ -11,7 +11,7 @@ from smsApp.models import Class, School, Student, User
 
 class Command(BaseCommand):
     help = "Import or update longitudinal student records from a CSV file."
-    required_columns = {"username", "admission_number", "admission_date"}
+    required_columns = {"username", "admission_number", "admission_date", "gender"}
 
     def add_arguments(self, parser):
         parser.add_argument("csv_file", type=Path)
@@ -40,6 +40,12 @@ class Command(BaseCommand):
                         admission_date = date.fromisoformat((row["admission_date"] or "").strip())
                     except ValueError as exc:
                         raise CommandError(f"Line {line_number}: admission_date must be YYYY-MM-DD.") from exc
+                    gender_aliases = {"f": Student.Gender.FEMALE, "female": Student.Gender.FEMALE,
+                                      "m": Student.Gender.MALE, "male": Student.Gender.MALE,
+                                      "o": Student.Gender.OTHER, "other": Student.Gender.OTHER}
+                    gender = gender_aliases.get((row.get("gender") or "").strip().casefold())
+                    if gender is None:
+                        raise CommandError(f"Line {line_number}: gender must be Female (F), Male (M), or Other (O).")
                     student = Student.objects.filter(
                         school=school, admission_number=admission_number
                     ).select_related("user").first()
@@ -57,7 +63,7 @@ class Command(BaseCommand):
                             raise CommandError(f"Line {line_number}: username belongs to a non-student user.")
                         student = Student.objects.create(
                             user=user, school=school, admission_number=admission_number,
-                            admission_date=admission_date,
+                            admission_date=admission_date, gender=gender,
                         )
                         created += 1
                     else:
@@ -67,7 +73,7 @@ class Command(BaseCommand):
                     user.last_name = (row.get("last_name") or "").strip()
                     user.email = (row.get("email") or "").strip()
                     user.save(update_fields=["first_name", "last_name", "email", "updated_at"])
-                    updates = {"admission_date": admission_date}
+                    updates = {"admission_date": admission_date, "gender": gender}
                     if row.get("status"):
                         updates["status"] = row["status"].strip()
                     class_name = (row.get("class_name") or "").strip()

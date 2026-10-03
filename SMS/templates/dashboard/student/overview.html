@@ -13,7 +13,7 @@
 <div class="alert alert-light border">No students yet. Once the school links a student to your parent account, their academic and finance details will appear here.</div>
 {% else %}
 <h3 class="mb-1">Welcome, {{ student.user.get_full_name|default:student.user.username }}</h3>
-<p class="text-muted mb-4">{{ student.admission_number }} &middot; {{ student.current_class|default:"No class assigned" }}
+<p class="text-muted mb-4">{{ student.admission_number }} &middot; {{ student.get_gender_display|default:"Gender not recorded" }} &middot; {{ student.current_class|default:"No class assigned" }}
     {% if current_term %} &middot; {{ current_term }}{% endif %}</p>
 
 <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-3 g-3">

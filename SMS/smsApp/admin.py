@@ -157,7 +157,7 @@ class StudentGuardianInline(admin.TabularInline):
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
     list_display = (
-        "admission_number", "user", "school", "current_class", "current_stream",
+        "admission_number", "user", "school", "gender", "current_class", "current_stream",
         "status", "is_active",
     )
     list_filter = ("school", "status", "current_class", "current_stream", "is_active")

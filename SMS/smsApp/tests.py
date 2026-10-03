@@ -3776,6 +3776,36 @@ class AcademicAdminDashboardTests(TestCase):
         for forbidden_term in ["Invoice", "invoice_number", "total_billed", "outstanding_balance"]:
             self.assertNotIn(forbidden_term, content)
 
+    def test_principal_overview_shows_gender_and_current_term_class_fees(self):
+        self.client.logout()
+        principal = User.objects.create_user(
+            username="chartprincipal", password="pass12345", role=User.Role.PRINCIPAL_DIRECTOR,
+        )
+        self.student.gender = Student.Gender.FEMALE
+        self.student.save(update_fields=["gender", "updated_at"])
+        structure = FeeStructure.objects.create(
+            school=self.school, academic_year=self.academic_year, term=self.term,
+            class_group=self.class_group, name="Current term fees",
+        )
+        invoice = Invoice.objects.create(
+            student=self.student, school=self.school, academic_year=self.academic_year,
+            term=self.term, fee_structure=structure, total_amount=Decimal("20000"),
+            issue_date=datetime.date(2026, 1, 10), due_date=datetime.date(2026, 4, 1),
+        )
+        Payment.objects.create(
+            invoice=invoice, amount=Decimal("5000"), payment_method=Payment.Method.CASH,
+            payment_date=datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
+        )
+        self.client.login(username="chartprincipal", password="pass12345")
+        response = self.client.get(reverse("dashboard:academic_admin_dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["student_gender_recorded"], 1)
+        self.assertEqual(response.context["gender_chart"][1]["percentage"], 100)
+        self.assertEqual(response.context["fee_class_chart"][0]["name"], "Grade 10")
+        self.assertEqual(response.context["fee_class_chart"][0]["total_billed"], 20000)
+        self.assertEqual(response.context["fee_class_chart"][0]["total_paid"], 5000)
+        self.assertContains(response, "Current-term fees by class")
+
     def test_students_list_shows_registered_student(self):
         response = self.client.get(reverse("dashboard:academic_admin_students"))
         self.assertContains(response, "ADM950")
@@ -3786,6 +3816,7 @@ class AcademicAdminDashboardTests(TestCase):
             {
                 "username": "newstudent1", "first_name": "Amy", "last_name": "Kim",
                 "admission_number": "ADM951", "admission_date": "2026-01-10",
+                "gender": Student.Gender.FEMALE,
                 "current_class_id": self.class_group.pk,
             },
         )
