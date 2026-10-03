@@ -129,6 +129,8 @@ from .services import (
     record_payment,
     record_family_payment,
     assign_fee_structure_to_class,
+    build_parent_academic_history,
+    build_student_financial_history,
     create_assessments_for_structure,
     record_staff_attendance,
     send_notification,
@@ -895,6 +897,7 @@ class StudentAcademicView(StudentRequiredMixin, TemplateView):
             "quiz_rows": quiz_rows,
             "pending_tasks": pending_tasks,
             "report_cards": report_cards,
+            "academic_history": build_parent_academic_history(student=student),
         })
         return context
 
@@ -1108,6 +1111,7 @@ class StudentFinanceView(StudentRequiredMixin, TemplateView):
             "payments": payments,
             "account_summary": account_summary,
             "fee_structures": fee_structures,
+            "financial_history": build_student_financial_history(student=student),
         })
         return context
 
@@ -1318,6 +1322,7 @@ class ParentChildAcademicView(ParentRequiredMixin, TemplateView):
             "subject_rows": subject_rows,
             "assignment_rows": assignment_rows,
             "report_cards": report_cards,
+            "academic_history": build_parent_academic_history(student=child),
         })
         return context
 
@@ -1338,12 +1343,11 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
 
         guardian = get_object_or_404(Guardian, user=self.request.user)
         invoices = Invoice.objects.filter(student=child).order_by("-issue_date")
-        payments = Payment.objects.filter(
-            Q(invoice__student=child) | Q(family_guardian=guardian)
-        ).select_related("invoice", "receipt").prefetch_related(
-            "allocations__invoice"
-        ).distinct().order_by("-payment_date")
+        payments = Payment.objects.filter(invoice__student=child).select_related(
+            "invoice", "receipt"
+        ).order_by("-payment_date")
         account_summary = compute_student_account_summary(student=child)
+        financial_history = build_student_financial_history(student=child)
         family_summary = compute_family_account_summary(guardian=guardian)
         fee_structures = FeeStructure.objects.filter(school=child.school, academic_year__is_current=True, is_active=True).filter(Q(class_groups=child.current_class) | Q(class_group=child.current_class)).prefetch_related("items__category", "transport_options").distinct()
 
@@ -1354,6 +1358,7 @@ class ParentChildFinanceView(ParentRequiredMixin, TemplateView):
             "account_summary": account_summary,
             "family_summary": family_summary,
             "fee_structures": fee_structures,
+            "financial_history": financial_history,
         })
         return context
 

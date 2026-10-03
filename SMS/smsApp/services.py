@@ -636,6 +636,109 @@ def assemble_report_data(*, student: "Student", term: "Term") -> dict[str, Any]:
     }
 
 
+def build_parent_academic_history(*, student: Student) -> list[dict[str, Any]]:
+    """Build published, year/class-grouped academic snapshots for guardians.
+
+    Enrollment rows retain the class and subjects for each academic year,
+    even after ``Student.current_class`` changes on promotion.
+    """
+    from .models import AcademicYear, Enrollment, GradingScheme
+
+    current_year = AcademicYear.objects.filter(school=student.school, is_current=True).first()
+    enrollments = list(
+        Enrollment.objects.filter(student=student)
+        .exclude(status=Enrollment.Status.DROPPED)
+        .select_related("academic_year", "class_subject__class_group", "class_subject__subject")
+        .order_by("academic_year__start_date", "class_subject__class_group__name")
+    )
+    grouped: dict[tuple[int, int], list[Any]] = {}
+    for enrollment in enrollments:
+        if current_year and enrollment.academic_year_id == current_year.pk:
+            continue
+        key = (enrollment.academic_year_id, enrollment.class_subject.class_group_id)
+        grouped.setdefault(key, []).append(enrollment)
+
+    scheme = GradingScheme.objects.filter(school=student.school, is_default=True).first()
+    history = []
+    for (_, class_id), rows in grouped.items():
+        year = rows[0].academic_year
+        class_group = rows[0].class_subject.class_group
+        terms = list(year.terms.order_by("term_number"))
+        class_subjects = list({row.class_subject_id: row.class_subject for row in rows}.values())
+        subject_rows = []
+        all_scores: list[Decimal] = []
+        all_points: list[Decimal] = []
+        for class_subject in class_subjects:
+            term_results = []
+            subject_scores = []
+            for term in terms:
+                summary = compute_weighted_average(
+                    student, class_subject, term, published_only=True,
+                )
+                score = summary["weighted_total"] if summary["components_graded"] else None
+                band = get_grade_for_mark(scheme, score) if scheme and score is not None else None
+                term_results.append({
+                    "term": term, "score": score,
+                    "grade": band.grade if band else "—",
+                })
+                if score is not None:
+                    subject_scores.append(score)
+                    all_scores.append(score)
+            subject_average = sum(subject_scores) / len(subject_scores) if subject_scores else None
+            overall_band = get_grade_for_mark(scheme, subject_average) if scheme and subject_average is not None else None
+            if overall_band:
+                all_points.append(overall_band.grade_point)
+            subject_rows.append({
+                "subject": class_subject.subject.name,
+                "terms": term_results,
+                "total_score": sum(subject_scores, Decimal("0")) if subject_scores else None,
+                "average": subject_average,
+                "grade": overall_band.grade if overall_band else "—",
+            })
+
+        overall_average = sum(all_scores) / len(all_scores) if all_scores else None
+        gpa = sum(all_points) / len(all_points) if all_points else None
+        average_band = get_grade_for_mark(scheme, overall_average) if scheme and overall_average is not None else None
+        position = None
+        population = Enrollment.objects.filter(
+            academic_year=year, class_subject__class_group=class_group,
+        ).exclude(status=Enrollment.Status.DROPPED).values("student_id").distinct().count()
+        if student.school.enable_position_ranking and overall_average is not None:
+            cohort_ids = list(Enrollment.objects.filter(
+                academic_year=year, class_subject__class_group=class_group,
+            ).exclude(status=Enrollment.Status.DROPPED).values_list("student_id", flat=True).distinct())
+            cohort_students = {
+                peer.pk: peer for peer in Student.objects.filter(pk__in=cohort_ids)
+            }
+            cohort_scores = []
+            for peer_id in cohort_ids:
+                peer_scores = []
+                peer = cohort_students.get(peer_id)
+                for class_subject in class_subjects:
+                    if peer is None:
+                        continue
+                    for term in terms:
+                        result = compute_weighted_average(peer, class_subject, term, published_only=True)
+                        if result["components_graded"]:
+                            peer_scores.append(result["weighted_total"])
+                if peer_scores:
+                    cohort_scores.append((peer_id, sum(peer_scores) / len(peer_scores)))
+            cohort_scores.sort(key=lambda pair: pair[1], reverse=True)
+            position = next((index for index, (peer_id, _) in enumerate(cohort_scores, 1) if peer_id == student.pk), None)
+
+        history.append({
+            "academic_year": year, "class_group": class_group,
+            "terms": terms,
+            "subjects": subject_rows,
+            "total_marks": sum(all_scores, Decimal("0")) if all_scores else None,
+            "average": overall_average, "average_grade": average_band.grade if average_band else "—",
+            "gpa": gpa,
+            "position": position, "population": population,
+        })
+    history.sort(key=lambda row: (row["academic_year"].start_date, row["class_group"].name), reverse=True)
+    return history
+
+
 def render_report_html(*, report_card: "ReportCard") -> str:
     """Renders report_card's configured template with freshly assembled
     data. Template choice and which sections to show come entirely from
@@ -924,7 +1027,15 @@ def generate_fee_structure_pdf(*, structure, student=None, generated_by=None, re
     tuition_term_totals = [sum((getattr(item, field) for item in tuition_items), Decimal("0")) for field in fields]
     optional_term_totals = [sum((getattr(item, field) for item in optional_items), Decimal("0")) for field in fields]
     transport_term_totals = [sum((row[field] for row in transport_rows), Decimal("0")) for field in fields]
-    included_optional = optional_items if student is not None else []
+    previous_balance = Decimal("0")
+    current_term_number = None
+    if student is not None:
+        ledger = build_student_financial_history(student=student)
+        previous_balance = ledger["opening_balance"]
+        current_term_number = ledger["current_term"].term_number if ledger.get("current_term") else None
+    tuition_totals_with_carry = list(tuition_term_totals)
+    if student is not None and current_term_number in (1, 2, 3):
+        tuition_totals_with_carry[current_term_number - 1] += previous_balance
     term_totals = [
         tuition_term_totals[index] + (optional_term_totals[index] if student is not None else Decimal("0"))
         + (transport_term_totals[index] if student is not None else Decimal("0"))
@@ -935,6 +1046,9 @@ def generate_fee_structure_pdf(*, structure, student=None, generated_by=None, re
         "structure": structure, "items": tuition_items,
         "optional_items": optional_items, "transport_rows": transport_rows,
         "tuition_term_totals": tuition_term_totals,
+        "tuition_totals_with_carry": tuition_totals_with_carry,
+        "previous_balance": previous_balance,
+        "current_term_number": current_term_number,
         "optional_term_totals": optional_term_totals,
         "transport_term_totals": transport_term_totals,
         "term_totals": term_totals, "student": student,
@@ -1317,11 +1431,8 @@ def record_payment(
     notes: str = "",
     request: HttpRequest | None = None,
 ):
-    """Spec §19 'Payments', 'Partial payments'. Rejects a payment that
-    would push the invoice's paid total over its `total_amount` — this
-    MVP treats overpayment as an input error rather than silently
-    creating a credit balance; revisit if your fee policy needs credits.
-
+    """Record a payment against an invoice, retaining any overpayment as
+    a credit that the account ledger carries forward to later terms.
     On success: updates invoice.status (§19 'Balances'), auto-generates
     a Receipt (spec requires receipts to exist for payments), and writes
     an AuditLog entry (spec §19 'All financial modifications must be
@@ -1330,16 +1441,6 @@ def record_payment(
 
     if amount <= 0:
         raise ValueError("Payment amount must be positive.")
-
-    already_paid = invoice.payments.filter(
-        status=Payment.Status.COMPLETED
-    ).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-
-    if already_paid + amount > invoice.total_amount:
-        raise ValueError(
-            f"Payment of {amount} would exceed the invoice's remaining "
-            f"balance of {invoice.total_amount - already_paid}."
-        )
 
     payment = Payment.objects.create(
         invoice=invoice, amount=amount, payment_method=payment_method,
@@ -1580,8 +1681,8 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     class fee structure. Completed payments continue to come from the real
     payment ledger, so the balance updates immediately after payment.
     """
+    from .models import Invoice
     from django.utils import timezone
-    from .models import Invoice, Payment
 
     structure_summary = compute_student_fee_structure_summary(student=student)
     invoices = Invoice.objects.filter(student=student).exclude(status=Invoice.Status.CANCELLED)
@@ -1589,25 +1690,232 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     current_term_invoices = invoices.filter(
         academic_year=current_term.academic_year, term=current_term
     ) if current_term else invoices.none()
-    invoice_total = current_term_invoices.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
-    total_billed = structure_summary["total"] if structure_summary["structure"] or structure_summary.get("structures") else invoice_total
-    total_paid = _student_paid_total(student=student, term=structure_summary.get("term"))
-
+    invoice_source = current_term_invoices if current_term else invoices
+    invoice_total = invoice_source.aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+    current_charges = structure_summary["total"] if structure_summary["structure"] or structure_summary.get("structures") else invoice_total
+    financial_history = build_student_financial_history(student=student)
+    total_paid = (financial_history["current_term_paid"] if current_term
+                  else _student_paid_total(student=student))
+    opening_balance = financial_history["opening_balance"] if current_term else Decimal("0")
+    total_billed = current_charges + max(opening_balance, Decimal("0"))
+    outstanding_balance = opening_balance + current_charges - total_paid
+    overdue_source = current_term_invoices if current_term else invoices
     today = timezone.localtime(timezone.now()).date()
-    arrears = current_term_invoices.filter(due_date__lt=today).exclude(status=Invoice.Status.PAID).aggregate(
-        total=_sum("total_amount")
-    )["total"] or Decimal("0")
+    arrears = overdue_source.filter(due_date__lt=today).exclude(
+        status=Invoice.Status.PAID
+    ).aggregate(total=_sum("total_amount"))["total"] or Decimal("0")
+
     return {
         "total_billed": total_billed,
         "total_paid": total_paid,
-        "outstanding_balance": max(total_billed - total_paid, Decimal("0")),
+        "outstanding_balance": outstanding_balance,
+        "outstanding_balance_display": f"{outstanding_balance:+,.2f}",
         "arrears": arrears,
+        "opening_balance": opening_balance,
         "fee_structure": structure_summary["structure"],
         "fee_structures": structure_summary.get("structures", []),
         "fee_items": structure_summary["items"],
         "fee_transport": structure_summary["transport"],
         "billed_from_fee_structure": bool(structure_summary["structure"] or structure_summary.get("structures")),
         "current_term": structure_summary.get("term"),
+    }
+
+
+def build_student_financial_history(*, student: Student) -> dict[str, Any]:
+    """Return invoice/payment history grouped into school years and terms.
+
+    Balances are signed and carried forward: positive means arrears, negative
+    means an unapplied credit. Completed refunds are netted, while
+    adjustments are reflected in the invoice's stored total.
+    """
+    from .models import AcademicYear, Enrollment, FeeStructure, Invoice, Payment, PaymentAllocation, Refund
+    from django.db.models import Q
+
+    invoices = list(
+        Invoice.objects.filter(student=student).exclude(status=Invoice.Status.CANCELLED)
+        .select_related("academic_year", "term", "fee_structure", "fee_structure__class_group")
+        .prefetch_related(
+            "payments__refunds", "payment_allocations__payment__refunds",
+        ).order_by("academic_year__start_date", "term__term_number", "issue_date", "pk")
+    )
+    enrollment_classes: dict[int, list[str]] = {}
+    enrollment_class_groups: dict[int, list[Any]] = {}
+    enrollment_rows = Enrollment.objects.filter(student=student).select_related(
+        "academic_year", "class_subject__class_group",
+    ).order_by("academic_year__start_date", "class_subject__class_group__name")
+    for enrollment in enrollment_rows:
+        names = enrollment_classes.setdefault(enrollment.academic_year_id, [])
+        name = enrollment.class_subject.class_group.name
+        if name not in names:
+            names.append(name)
+        groups = enrollment_class_groups.setdefault(enrollment.academic_year_id, [])
+        if all(group.pk != enrollment.class_subject.class_group_id for group in groups):
+            groups.append(enrollment.class_subject.class_group)
+
+    term_buckets: dict[tuple[int, int | None], dict[str, Any]] = {}
+    for invoice in invoices:
+        key = (invoice.academic_year_id, invoice.term_id)
+        bucket = term_buckets.setdefault(key, {
+            "academic_year": invoice.academic_year, "term": invoice.term,
+            "invoices": [], "billed": Decimal("0"), "paid": Decimal("0"),
+            "payments": [], "has_invoice": False,
+        })
+        bucket["has_invoice"] = True
+        # FinancialAdjustment's service updates this stored total as well as
+        # appending its audit record, so adding adjustment rows again would
+        # double-count corrections.
+        invoice_billed = invoice.total_amount
+        direct_payments = [p for p in invoice.payments.all() if p.status == Payment.Status.COMPLETED]
+        allocated_rows = [a for a in invoice.payment_allocations.all() if a.payment.status == Payment.Status.COMPLETED]
+        direct_paid = sum((p.amount for p in direct_payments), Decimal("0"))
+        direct_refunds = sum((refund.amount for payment in direct_payments
+                              for refund in payment.refunds.all()
+                              if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+        allocated_paid = sum((allocation.amount for allocation in allocated_rows), Decimal("0"))
+        allocated_refunds = Decimal("0")
+        for allocation in allocated_rows:
+            refund_total = sum((refund.amount for refund in allocation.payment.refunds.all()
+                                if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+            if refund_total and allocation.payment.amount:
+                allocated_refunds += refund_total * allocation.amount / allocation.payment.amount
+        invoice_paid = direct_paid + allocated_paid - direct_refunds - allocated_refunds
+        bucket["billed"] += invoice_billed
+        bucket["paid"] += invoice_paid
+        bucket["invoices"].append(invoice)
+
+        for payment in direct_payments:
+            refunded = sum((r.amount for r in payment.refunds.all()
+                            if r.status == Refund.Status.COMPLETED), Decimal("0"))
+            bucket["payments"].append({"payment": payment, "amount": payment.amount,
+                                        "refunded": refunded})
+        for allocation in allocated_rows:
+            refund_total = sum((refund.amount for refund in allocation.payment.refunds.all()
+                                if refund.status == Refund.Status.COMPLETED), Decimal("0"))
+            allocation_refund = (
+                refund_total * allocation.amount / allocation.payment.amount
+                if refund_total and allocation.payment.amount else Decimal("0")
+            )
+            bucket["payments"].append({"payment": allocation.payment,
+                                        "amount": allocation.amount, "refunded": allocation_refund})
+
+    current_term = Term.objects.filter(
+        academic_year__school=student.school, academic_year__is_current=True, is_current=True,
+    ).first()
+    current_summary = compute_student_fee_structure_summary(student=student)
+    academic_years = {bucket["academic_year"].pk: bucket["academic_year"] for bucket in term_buckets.values()}
+    for enrollment in enrollment_rows:
+        academic_years[enrollment.academic_year_id] = enrollment.academic_year
+    if current_term and student.current_class_id:
+        academic_years[current_term.academic_year_id] = current_term.academic_year
+
+    for year in academic_years.values():
+        groups = enrollment_class_groups.get(year.pk, [])
+        if not groups:
+            groups = [student.current_class] if (
+                student.current_class_id and year.is_current
+            ) else []
+        if not groups:
+            groups = [invoice.fee_structure.class_group for invoice in invoices
+                      if invoice.academic_year_id == year.pk and invoice.fee_structure.class_group_id]
+        class_group = groups[0] if groups else None
+        annual_invoice_exists = term_buckets.get((year.pk, None), {}).get("has_invoice", False)
+        structures = FeeStructure.objects.none()
+        if class_group:
+            structures = list(FeeStructure.objects.filter(
+                school=student.school, academic_year=year,
+            ).filter(Q(class_groups=class_group) | Q(class_group=class_group))
+                .prefetch_related("items", "transport_options").order_by("-created_at"))
+        annual_structures = [structure for structure in structures if structure.term_id is None]
+
+        for term in year.terms.order_by("term_number"):
+            key = (year.pk, term.pk)
+            bucket = term_buckets.setdefault(key, {
+                "academic_year": year, "term": term, "invoices": [],
+                "billed": Decimal("0"), "paid": Decimal("0"), "payments": [],
+                "has_invoice": False, "derived_from_structure": False,
+            })
+            if bucket["has_invoice"] or annual_invoice_exists:
+                continue
+            if current_term == term and current_summary.get("term") == term:
+                bucket["billed"] = current_summary["total"]
+                bucket["derived_from_structure"] = bool(current_summary.get("structures"))
+                continue
+
+            candidates = annual_structures or [s for s in structures if s.term_id == term.pk]
+            if not candidates:
+                continue
+            structure = candidates[0]
+            term_field = f"term_{term.term_number}_amount"
+            fee_total = Decimal("0")
+            for item in structure.items.all():
+                if item.section == item.Section.OPTIONAL and not student.takes_coding_robotics:
+                    continue
+                amount = getattr(item, term_field)
+                if structure.term_id and not amount:
+                    amount = item.amount
+                fee_total += amount
+            if student.transport_option != "NONE" and student.transport_route:
+                route = next((option for option in structure.transport_options.all()
+                              if option.route_name.strip().casefold() == student.transport_route.strip().casefold()), None)
+                if route:
+                    fee_total += route.two_way_amount if student.transport_option == "TWO_WAY" else route.one_way_amount
+            bucket["billed"] = fee_total
+            bucket["derived_from_structure"] = True
+
+    ordered_buckets = sorted(
+        term_buckets.values(),
+        key=lambda row: (row["academic_year"].start_date,
+                         row["term"].term_number if row["term"] else 99),
+    )
+    running_balance = Decimal("0")
+    years: dict[int, dict[str, Any]] = {}
+    opening_balance = Decimal("0")
+    for bucket in ordered_buckets:
+        year = bucket["academic_year"]
+        term = bucket["term"]
+        balance_before = running_balance
+        running_balance += bucket["billed"] - bucket["paid"]
+        class_names = enrollment_classes.get(year.pk, [])
+        class_name = ", ".join(class_names) or (
+            enrollment_class_groups.get(year.pk, [None])[0].name
+            if enrollment_class_groups.get(year.pk) else
+            bucket["invoices"][0].fee_structure.class_group.name
+            if bucket["invoices"] and bucket["invoices"][0].fee_structure.class_group_id
+            else "Class not recorded"
+        )
+        year_row = years.setdefault(year.pk, {
+            "academic_year": year, "class_name": class_name,
+            "terms": [], "total_billed": Decimal("0"), "total_paid": Decimal("0"),
+        })
+        year_row["total_billed"] += bucket["billed"]
+        year_row["total_paid"] += bucket["paid"]
+        year_row["terms"].append({
+            "term": term, "name": term.name if term else "Annual / unassigned",
+            "billed": bucket["billed"], "paid": bucket["paid"],
+            "opening_balance": balance_before,
+            "opening_balance_display": f"{balance_before:+,.2f}",
+            "closing_balance": running_balance,
+            "balance_display": f"{running_balance:+,.2f}",
+            "has_invoice": bucket["has_invoice"],
+            "derived_from_structure": bucket.get("derived_from_structure", False),
+            "payments": sorted(bucket["payments"], key=lambda row: row["payment"].payment_date),
+        })
+        if current_term and (year.start_date < current_term.academic_year.start_date or
+                             (term and term.start_date < current_term.start_date)):
+            opening_balance = running_balance
+
+    current_term_row = term_buckets.get((current_term.academic_year_id, current_term.pk)) if current_term else None
+    current_term_paid = current_term_row["paid"] if current_term_row else Decimal("0")
+    if current_term and current_term_row and not current_term_row["has_invoice"]:
+        current_term_paid = _student_paid_total(student=student, term=current_term)
+
+    for year_row in years.values():
+        year_row["terms"].sort(key=lambda row: row["term"].term_number if row["term"] else 99)
+        year_row["year_balance_display"] = year_row["terms"][-1]["balance_display"] if year_row["terms"] else "+0.00"
+    return {
+        "years": sorted(years.values(), key=lambda row: row["academic_year"].start_date, reverse=True),
+        "opening_balance": opening_balance,
+        "current_term_paid": current_term_paid,
     }
 
 
@@ -1631,10 +1939,6 @@ def record_family_payment(*, guardian, amount: Decimal, allocations: list[tuple]
             raise ValueError("An invoice may only appear once in the allocations.")
         if value <= 0:
             raise ValueError("Allocation amounts must be positive.")
-        direct = invoice.payments.filter(status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-        allocated = PaymentAllocation.objects.filter(invoice=invoice, payment__status=Payment.Status.COMPLETED).aggregate(total=_sum("amount"))["total"] or Decimal("0")
-        if direct + allocated + value > invoice.total_amount:
-            raise ValueError(f"Allocation exceeds the remaining balance for {invoice.invoice_number}.")
         normalized.append((invoice, value))
         seen.add(invoice.pk)
         allocated_total += value
@@ -1660,11 +1964,15 @@ def compute_family_account_summary(*, guardian) -> dict[str, Any]:
         total_paid += paid
         rows.append({
             "student": child, "total_billed": billed, "total_paid": paid,
-            "outstanding_balance": max(billed - paid, Decimal("0")),
+            "outstanding_balance": account["outstanding_balance"],
+            "outstanding_balance_display": account["outstanding_balance_display"],
             "fee_structure": account.get("fee_structure"),
             "billed_from_fee_structure": account.get("billed_from_fee_structure", False),
         })
-    return {"guardian": guardian, "children": rows, "total_billed": total_billed, "total_paid": total_paid, "outstanding_balance": max(total_billed - total_paid, Decimal("0"))}
+    total_outstanding = sum((row["outstanding_balance"] for row in rows), Decimal("0"))
+    return {"guardian": guardian, "children": rows, "total_billed": total_billed,
+            "total_paid": total_paid, "outstanding_balance": total_outstanding,
+            "outstanding_balance_display": f"{total_outstanding:+,.2f}"}
 
 
 # Phase 13 — Library Module (spec §20)

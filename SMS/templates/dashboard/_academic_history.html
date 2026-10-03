@@ -1,0 +1,18 @@
+<h5 class="mt-4">Completed Grade Records</h5>
+<p class="small text-muted">Published scores are grouped by the class and academic year from enrolment history. Recent grade records appear first.</p>
+{% for year in academic_history %}
+<div class="card sms-stat-card p-3 mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start mb-2">
+        <h6 class="mb-1">{{ year.class_group.name }} — {{ year.academic_year.name }}</h6>
+        <div class="small text-muted">Total marks: {{ year.total_marks|default:"—" }} · Average: {{ year.average|default:"—" }}{% if year.average %}%{% endif %} · Average grade: {{ year.average_grade }} · GPA: {{ year.gpa|default:"—" }} · Position: {% if year.position %}{{ year.position }} / {{ year.population }}{% else %}Not ranked{% endif %}</div>
+    </div>
+    <div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+        <thead><tr><th>Subject</th>{% for term in year.terms %}<th>{{ term.name }} score / grade</th>{% endfor %}<th>Total score</th><th>Year grade</th></tr></thead>
+        <tbody>
+        {% for row in year.subjects %}<tr><td>{{ row.subject }}</td>{% for result in row.terms %}<td>{% if result.score is not None %}{{ result.score }} / {{ result.grade }}{% else %}—{% endif %}</td>{% endfor %}<td>{{ row.total_score|default:"—" }}</td><td>{{ row.grade }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="text-muted">No published subject results for this year.</td></tr>{% endfor %}
+        </tbody>
+        <tfoot><tr class="fw-semibold"><td>Overall</td><td colspan="{{ year.terms|length }}">{{ year.average|default:"—" }}% · Grade {{ year.average_grade }} · GPA {{ year.gpa|default:"—" }}</td><td>{{ year.total_marks|default:"—" }}</td><td>Position {% if year.position %}{{ year.position }} / {{ year.population }}{% else %}—{% endif %}</td></tr></tfoot>
+    </table></div>
+</div>
+{% empty %}<div class="alert alert-light border">No completed-grade academic history is available yet. Published results and enrolment history will appear here.</div>{% endfor %}

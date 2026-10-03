@@ -1602,18 +1602,21 @@ class FinanceTests(TestCase):
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, Invoice.Status.PAID)
 
-    def test_overpayment_is_rejected(self):
+    def test_overpayment_is_retained_as_account_credit(self):
         invoice = generate_invoice_for_student(
             student=self.student, fee_structure=self.structure,
             academic_year=self.academic_year, term=self.term,
             issued_by=self.finance_admin, due_date=datetime.date(2026, 2, 1),
         )
-        with self.assertRaises(ValueError):
-            record_payment(
-                invoice=invoice, amount=Decimal("70000"), payment_method=Payment.Method.CASH,
-                payment_date=datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc),
-                received_by=self.finance_admin,
-            )
+        record_payment(
+            invoice=invoice, amount=Decimal("70000"), payment_method=Payment.Method.CASH,
+            payment_date=datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc),
+            received_by=self.finance_admin,
+        )
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.PAID)
+        summary = compute_student_account_summary(student=self.student)
+        self.assertEqual(summary["outstanding_balance"], Decimal("-10000"))
 
     def test_refund_approval_reduces_invoice_paid_status(self):
         invoice = generate_invoice_for_student(
@@ -1694,6 +1697,42 @@ class FinanceTests(TestCase):
         self.assertEqual(summary["total_paid"], Decimal("10000"))
         self.assertEqual(summary["outstanding_balance"], Decimal("50000"))
         self.assertEqual(summary["arrears"], Decimal("60000"))  # still not PAID and overdue
+
+    def test_previous_term_arrears_carry_into_current_term(self):
+        self.academic_year.is_current = True
+        self.academic_year.save(update_fields=["is_current"])
+        self.term.is_current = True
+        self.term.save(update_fields=["is_current"])
+        previous_year = AcademicYear.objects.create(
+            school=self.school, name="2025",
+            start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 12, 31),
+        )
+        previous_term = Term.objects.create(
+            academic_year=previous_year, name="Term 3", term_number=3,
+            start_date=datetime.date(2025, 9, 1), end_date=datetime.date(2025, 12, 1),
+        )
+        previous_invoice = Invoice.objects.create(
+            student=self.student, school=self.school, academic_year=previous_year,
+            term=previous_term, fee_structure=self.structure, total_amount=Decimal("100"),
+            issue_date=datetime.date(2025, 9, 1), due_date=datetime.date(2025, 10, 1),
+        )
+        current_invoice = Invoice.objects.create(
+            student=self.student, school=self.school, academic_year=self.academic_year,
+            term=self.term, fee_structure=self.structure, total_amount=Decimal("200"),
+            issue_date=datetime.date(2026, 1, 1), due_date=datetime.date(2026, 2, 1),
+        )
+        record_payment(
+            invoice=previous_invoice, amount=Decimal("60"),
+            payment_method=Payment.Method.CASH,
+            payment_date=datetime.datetime(2025, 9, 15, tzinfo=datetime.timezone.utc),
+            received_by=self.finance_admin,
+        )
+
+        summary = compute_student_account_summary(student=self.student)
+        self.assertEqual(summary["opening_balance"], Decimal("40"))
+        self.assertEqual(summary["total_billed"], Decimal("240"))
+        self.assertEqual(summary["outstanding_balance"], Decimal("240"))
+        self.assertEqual(summary["outstanding_balance_display"], "+240.00")
 
     def test_invoice_line_item_amounts_are_non_negative(self):
         with self.assertRaises(IntegrityError):
@@ -2438,6 +2477,59 @@ class ParentDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Mathematics")
 
+    def test_academic_page_shows_published_results_for_previous_grade(self):
+        previous_class = Class.objects.create(
+            school=self.school, program=self.program, name="Grade 9",
+        )
+        previous_subject = ClassSubject.objects.create(
+            class_group=previous_class, subject=self.subject,
+        )
+        previous_year = AcademicYear.objects.create(
+            school=self.school, name="2025",
+            start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 12, 31),
+        )
+        previous_term = Term.objects.create(
+            academic_year=previous_year, name="Term 1", term_number=1,
+            start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 4, 1),
+        )
+        Enrollment.objects.create(
+            student=self.child1, class_subject=previous_subject,
+            academic_year=previous_year, status=Enrollment.Status.COMPLETED,
+        )
+        scheme = GradingScheme.objects.create(
+            school=self.school, name="Standard", is_default=True,
+        )
+        GradeBand.objects.create(
+            scheme=scheme, min_mark=80, max_mark=100, grade="A", grade_point=4,
+        )
+        assessment_type = AssessmentType.objects.create(
+            school=self.school, name="Final", code="FINAL",
+        )
+        structure = AssessmentStructure.objects.create(
+            school=self.school, term=previous_term, subject=self.subject,
+            name="Final structure",
+        )
+        component = AssessmentComponent.objects.create(
+            structure=structure, assessment_type=assessment_type,
+            weight_percentage=100, max_marks=100,
+        )
+        assessment = Assessment.objects.create(
+            class_subject=previous_subject, term=previous_term,
+            component=component, title="Final examination",
+            workflow_status=Assessment.WorkflowStatus.PUBLISHED, is_published=True,
+        )
+        AssessmentMark.objects.create(
+            assessment=assessment, student=self.child1, marks_obtained=80,
+        )
+
+        response = self.client.get(
+            reverse("dashboard:parent_child_academic", args=[self.child1.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Grade 9 — 2025")
+        self.assertContains(response, "80.00 / A")
+        self.assertContains(response, "GPA: 4.0")
+
     def test_cannot_view_unrelated_student_academic_page(self):
         response = self.client.get(
             reverse("dashboard:parent_child_academic", args=[self.unrelated_student.pk])
@@ -2585,6 +2677,25 @@ class ParentDashboardTests(TestCase):
         response = self.client.get(reverse("dashboard:parent_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.context["child_rows"]), 0)
+
+
+class ParentWithoutChildrenDashboardTests(TestCase):
+    def test_parent_without_linked_student_gets_empty_dashboard_not_404(self):
+        parent = User.objects.create_user(
+            username="parentwithoutchild", password="pass12345", role=User.Role.PARENT,
+        )
+        Guardian.objects.create(
+            user=parent, school=School.objects.create(name="Empty School", code="EMPTY"),
+            first_name="Empty", last_name="Parent", relationship="Parent",
+            phone_number="+254700000098",
+        )
+        self.client.force_login(parent)
+        response = self.client.get(reverse("dashboard:student_dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No students yet")
+        self.assertContains(response, "Finance")
+        academic = self.client.get(reverse("dashboard:student_academic"))
+        self.assertRedirects(academic, reverse("dashboard:student_dashboard"))
 
 
 class TeacherDashboardTests(TestCase):
@@ -3093,7 +3204,7 @@ class FinanceAdminDashboardTests(TestCase):
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, Invoice.Status.PARTIALLY_PAID)
 
-    def test_overpayment_via_dashboard_is_rejected_not_500(self):
+    def test_overpayment_via_dashboard_is_accepted_for_carry_forward(self):
         invoice = generate_invoice_for_student(
             student=self.student, fee_structure=self.structure,
             academic_year=self.academic_year, term=self.term,
@@ -3106,7 +3217,8 @@ class FinanceAdminDashboardTests(TestCase):
                 "payment_date": "2026-01-15T10:00",
             },
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(invoice.payments.filter(amount=Decimal("999999")).exists())
 
     def test_approve_refund_via_dashboard(self):
         invoice = generate_invoice_for_student(

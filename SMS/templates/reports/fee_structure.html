@@ -34,7 +34,8 @@
     <thead><tr><th>Particulars</th><th>Term 1</th><th>Term 2</th><th>Term 3</th></tr></thead>
     <tbody>
       {% for item in items %}<tr><td>{{ item.display_particulars }}</td><td class="right">Ksh {{ item.term_1_amount }}</td><td class="right">Ksh {{ item.term_2_amount }}</td><td class="right">Ksh {{ item.term_3_amount }}</td></tr>{% endfor %}
-      <tr><th>Total</th>{% for total in tuition_term_totals %}<th class="right">Ksh {{ total }}</th>{% endfor %}</tr>
+      {% if student %}<tr><td>Previous arrears / credit</td>{% for total in tuition_term_totals %}<td class="right">{% if current_term_number == forloop.counter %}Ksh {{ previous_balance }}{% else %}Ksh 0.00{% endif %}</td>{% endfor %}</tr>{% endif %}
+      <tr><th>Total</th>{% for total in tuition_totals_with_carry %}<th class="right">Ksh {{ total }}</th>{% endfor %}</tr>
     </tbody>
   </table>
 

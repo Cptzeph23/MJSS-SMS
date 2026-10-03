@@ -18,7 +18,7 @@
         <div class="text-end small">
             <div>Billed: <strong>Ksh {{ family.total_billed }}</strong></div>
             <div>Paid: <strong>Ksh {{ family.total_paid }}</strong></div>
-            <div>Balance: <strong class="text-danger">Ksh {{ family.outstanding_balance }}</strong></div>
+            <div>Balance: <strong class="text-danger">Ksh {{ family.outstanding_balance_display }}</strong></div>
         </div>
     </div>
 
@@ -33,7 +33,7 @@
                     <td>{{ row.student.admission_number }}</td>
                     <td>Ksh {{ row.total_billed }}</td>
                     <td>Ksh {{ row.total_paid }}</td>
-                    <td class="{% if row.outstanding_balance > 0 %}text-danger{% endif %}">Ksh {{ row.outstanding_balance }}</td>
+                    <td class="{% if row.outstanding_balance > 0 %}text-danger{% endif %}">Ksh {{ row.outstanding_balance_display }}</td>
                 </tr>
             {% empty %}
                 <tr><td colspan="5" class="text-muted">No children are linked to this family.</td></tr>

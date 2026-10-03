@@ -1,0 +1,17 @@
+<h5 class="mt-4">Financial History by Grade and Term</h5>
+<p class="small text-muted">Balances carry forward chronologically: positive amounts are arrears; negative amounts are unapplied credits.</p>
+{% for year in financial_history.years %}
+<div class="card sms-stat-card p-3 mb-3">
+    <div class="d-flex justify-content-between flex-wrap mb-2"><h6>{{ year.class_name }} — {{ year.academic_year.name }}</h6><span class="fw-semibold">Year-end balance: Ksh {{ year.year_balance_display }}</span></div>
+    <div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+        <thead><tr><th>Term</th><th>Fees billed</th><th>Payment records</th><th>Total paid</th><th>Balance carried forward</th></tr></thead>
+        <tbody>{% for term_row in year.terms %}
+        <tr><td>{{ term_row.name }}{% if term_row.derived_from_structure and not term_row.has_invoice %}<div class="small text-muted">Billed from fee structure</div>{% endif %}{% if term_row.opening_balance %}<div class="small text-muted">Opening balance: Ksh {{ term_row.opening_balance_display }}</div>{% endif %}</td>
+            <td>Ksh {{ term_row.billed|floatformat:2 }}</td>
+            <td>{% for entry in term_row.payments %}<div>{{ entry.payment.payment_number }} · {{ entry.payment.payment_date|date:"d M Y" }} · Ksh {{ entry.amount|floatformat:2 }}{% if entry.refunded %}<span class="text-danger"> (Ksh {{ entry.refunded|floatformat:2 }} refunded)</span>{% endif %}</div>{% empty %}<span class="text-muted">No payments recorded</span>{% endfor %}</td>
+            <td>Ksh {{ term_row.paid|floatformat:2 }}</td><td>Ksh {{ term_row.balance_display }}</td>
+        </tr>{% endfor %}</tbody>
+        <tfoot><tr class="fw-semibold"><td>Year totals</td><td>Ksh {{ year.total_billed|floatformat:2 }}</td><td></td><td>Ksh {{ year.total_paid|floatformat:2 }}</td><td>Ksh {{ year.year_balance_display }}</td></tr></tfoot>
+    </table></div>
+</div>
+{% empty %}<div class="alert alert-light border">No historical payment or invoice records are available yet.</div>{% endfor %}
