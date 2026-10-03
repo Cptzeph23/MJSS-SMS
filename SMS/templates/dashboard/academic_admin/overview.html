@@ -112,13 +112,15 @@
     const genders = JSON.parse(document.getElementById('academic-gender-data').textContent);
     const classes = JSON.parse(document.getElementById('academic-class-data').textContent);
     const assessments = JSON.parse(document.getElementById('academic-assessment-data').textContent);
-    const colors = ['#6f1d32','#8c2f46','#b66b7c','#d9822b','#777777','#4a1020','#c9a0aa','#b3432f'];
-    new Chart(document.getElementById('studentGenderChart'), {type:'pie', data:{labels:genders.map(x=>x.label+' · '+x.percentage+'%'), datasets:[{data:genders.map(x=>x.percentage), backgroundColor:colors}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:context=>genders[context.dataIndex].label+': '+context.raw+'% ('+genders[context.dataIndex].count+' students)'}}}}});
+    const genderColors = ['#d95f8d', '#3978b8', '#8b5bb5'];
+    new Chart(document.getElementById('studentGenderChart'), {type:'pie', data:{labels:genders.map(x=>x.label+' · '+x.percentage+'%'), datasets:[{data:genders.map(x=>x.percentage), backgroundColor:genderColors}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:context=>genders[context.dataIndex].label+': '+context.raw+'% ('+genders[context.dataIndex].count+' students)'}}}}});
     new Chart(document.getElementById('classStudentsChart'), {type:'bar', data:{labels:classes.map(x=>x.name), datasets:[{label:'Active students', data:classes.map(x=>x.student_count), backgroundColor:'#8c2f46'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
     new Chart(document.getElementById('assessmentWorkflowChart'), {type:'bar', data:{labels:assessments.map(x=>x.label), datasets:[{label:'Assessments', data:assessments.map(x=>x.count), backgroundColor:'#d9822b'}]}, options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
     {% if request.user.role == "PRINCIPAL_DIRECTOR" %}
     const fees = JSON.parse(document.getElementById('academic-fees-data').textContent);
-    new Chart(document.getElementById('classFeesChart'), {type:'bar', data:{labels:fees.map(x=>x.name), datasets:[{label:'Total billed (Ksh)',data:fees.map(x=>x.total_billed),backgroundColor:'#8c2f46'},{label:'Total paid (Ksh)',data:fees.map(x=>x.total_paid),backgroundColor:'#d9822b'}]}, options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'bottom'}}}});
+    const billedColors = ['#6f1d32','#236b55','#295e9e','#a85d24','#7551a3','#218a91'];
+    const paidColors = ['#cf6a7e','#5a9c76','#6794cf','#dfa252','#a286c7','#62b4b0'];
+    new Chart(document.getElementById('classFeesChart'), {type:'bar', data:{labels:fees.map(x=>x.name), datasets:[{label:'Total billed (Ksh)',data:fees.map(x=>x.total_billed),backgroundColor:fees.map((_,i)=>billedColors[i%billedColors.length])},{label:'Total paid (Ksh)',data:fees.map(x=>x.total_paid),backgroundColor:fees.map((_,i)=>paidColors[i%paidColors.length])}]}, options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'bottom'}}}});
     {% endif %}
 }());
 </script>

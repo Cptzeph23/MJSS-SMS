@@ -3339,7 +3339,9 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
             from django.db.models.functions import Coalesce
 
             can_view_finance_chart = self.request.user.role == User.Role.PRINCIPAL_DIRECTOR
-            current_term = Term.objects.filter(academic_year__school=school, is_current=True).first() if can_view_finance_chart else None
+            current_term = Term.objects.filter(
+                academic_year__school=school, academic_year__is_current=True, is_current=True,
+            ).first() if can_view_finance_chart else None
             grouped_fees = {}
             if current_term:
                 money = DecimalField(max_digits=14, decimal_places=2)
@@ -3377,8 +3379,10 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
                     output_field=money,
                 ))
                 grouped_fees = {
-                    row["student__current_class_id"]: row
-                    for row in invoices.values("student__current_class_id").annotate(
+                    row["chart_class_id"]: row
+                    for row in invoices.annotate(
+                        chart_class_id=Coalesce(F("student__current_class_id"), F("fee_structure__class_group_id")),
+                    ).values("chart_class_id").annotate(
                         total_billed=Sum("total_amount"), total_paid=Sum("net_paid"),
                     )
                 }
