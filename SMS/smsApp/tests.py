@@ -1616,7 +1616,8 @@ class FinanceTests(TestCase):
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, Invoice.Status.PAID)
         summary = compute_student_account_summary(student=self.student)
-        self.assertEqual(summary["outstanding_balance"], Decimal("-10000"))
+        self.assertEqual(summary["outstanding_balance"], Decimal("10000"))
+        self.assertEqual(summary["outstanding_balance_display"], "+10,000.00")
 
     def test_refund_approval_reduces_invoice_paid_status(self):
         invoice = generate_invoice_for_student(
@@ -1695,7 +1696,7 @@ class FinanceTests(TestCase):
         summary = compute_student_account_summary(student=self.student)
         self.assertEqual(summary["total_billed"], Decimal("60000"))
         self.assertEqual(summary["total_paid"], Decimal("10000"))
-        self.assertEqual(summary["outstanding_balance"], Decimal("50000"))
+        self.assertEqual(summary["outstanding_balance"], Decimal("-50000"))
         self.assertEqual(summary["arrears"], Decimal("60000"))  # still not PAID and overdue
 
     def test_previous_term_arrears_carry_into_current_term(self):
@@ -1729,10 +1730,10 @@ class FinanceTests(TestCase):
         )
 
         summary = compute_student_account_summary(student=self.student)
-        self.assertEqual(summary["opening_balance"], Decimal("40"))
+        self.assertEqual(summary["opening_balance"], Decimal("-40"))
         self.assertEqual(summary["total_billed"], Decimal("240"))
-        self.assertEqual(summary["outstanding_balance"], Decimal("240"))
-        self.assertEqual(summary["outstanding_balance_display"], "+240.00")
+        self.assertEqual(summary["outstanding_balance"], Decimal("-240"))
+        self.assertEqual(summary["outstanding_balance_display"], "-240.00")
 
     def test_invoice_line_item_amounts_are_non_negative(self):
         with self.assertRaises(IntegrityError):

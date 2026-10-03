@@ -76,6 +76,10 @@
             overflow-y: auto;
             background-color: var(--sms-school-primary, var(--sms-maroon-900));
             color: #cfe6db;
+            width: 260px;
+            flex: 0 0 260px;
+            z-index: 1045;
+            transition: transform .22s ease;
         }
         .sms-sidebar .sms-brand { color: #ffffff; }
         .sms-sidebar a { color: #cfe6db; text-decoration: none; }
@@ -100,6 +104,43 @@
         }
         .sms-topnav .btn-light:hover { background-color: var(--sms-maroon-100); }
         .d-flex > .flex-grow-1 { height: 100vh; overflow-y: auto; min-width: 0; }
+        .sms-main { min-width: 0; width: 100%; }
+        .sms-sidebar-backdrop { display: none; }
+
+        @media (max-width: 767.98px) {
+            html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+            body > .d-flex { min-height: 100vh; width: 100%; }
+            .sms-sidebar {
+                position: fixed;
+                inset: 0 auto 0 0;
+                width: min(84vw, 300px) !important;
+                height: 100dvh;
+                min-height: 0;
+                overflow-y: auto;
+                transform: translateX(-105%);
+                box-shadow: 8px 0 28px rgba(0,0,0,.2);
+            }
+            body.sms-sidebar-open .sms-sidebar { transform: translateX(0); }
+            body.sms-sidebar-open { overflow: hidden; }
+            .sms-sidebar-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 1040;
+                background: rgba(20,15,17,.48);
+            }
+            body.sms-sidebar-open .sms-sidebar-backdrop { display: block; }
+            .sms-app-content { width: 100%; max-width: 100%; flex: 1 1 100%; }
+            .d-flex > .flex-grow-1 { height: 100dvh; width: 100%; overflow-x: hidden; }
+            .sms-topnav { min-height: 58px; gap: .5rem; padding-inline: .75rem !important; }
+            .sms-topnav > .sms-topnav-start { min-width: 0; flex: 1 1 auto; }
+            .sms-topnav .breadcrumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .sms-topnav > .d-flex { gap: .4rem !important; }
+            .sms-topnav .dropdown-toggle { max-width: 44vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .sms-topnav .dropdown-menu { max-width: calc(100vw - 1.5rem); }
+            .sms-main { padding: 1rem !important; }
+            .sms-main .table-responsive { max-width: 100%; }
+            .sms-main img, .sms-main canvas, .sms-main video { max-width: 100%; height: auto; }
+        }
 
         /* --- Stat cards: clean, elevated, jungle-green accent bar --- */
         .sms-stat-card {
@@ -119,7 +160,7 @@
 </head>
 <body>
 <div class="d-flex">
-    <nav class="sms-sidebar p-3" style="width: 260px; flex-shrink: 0; --sms-school-primary: {{ dashboard_school.primary_color|default:'#6f1d32' }}; --sms-school-secondary: {{ dashboard_school.secondary_color|default:'#4d4d4d' }};">
+    <nav id="dashboard-sidebar" class="sms-sidebar p-3" aria-label="Dashboard navigation" style="--sms-school-primary: {{ dashboard_school.primary_color|default:'#6f1d32' }}; --sms-school-secondary: {{ dashboard_school.secondary_color|default:'#4d4d4d' }};">
         <div class="fs-4 fw-semibold sms-brand mb-4 d-flex align-items-center gap-2">
             {% if dashboard_school and dashboard_school.logo %}
                 <img src="{{ dashboard_school.logo.url }}" alt="{{ dashboard_school.name }} logo"
@@ -142,16 +183,23 @@
             {% block sidebar_items %}{% endblock %}
         </ul>
     </nav>
+    <div class="sms-sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
 
-    <div class="flex-grow-1">
+    <div class="flex-grow-1 sms-app-content">
         <nav class="sms-topnav d-flex align-items-center justify-content-between px-4 py-2">
-            <nav aria-label="breadcrumb">
+            <div class="sms-topnav-start d-flex align-items-center gap-2">
+                <button class="btn btn-light d-md-none" type="button" id="dashboard-nav-toggle"
+                        aria-label="Open dashboard navigation" aria-controls="dashboard-sidebar" aria-expanded="false">
+                    <i class="bi bi-list fs-5" aria-hidden="true"></i>
+                </button>
+                <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
                     {% block breadcrumbs %}
                         <li class="breadcrumb-item active">Dashboard</li>
                     {% endblock %}
                 </ol>
-            </nav>
+                </nav>
+            </div>
             <div class="d-flex align-items-center gap-3">
                 <div class="dropdown">
                     <button class="btn btn-light position-relative" title="Notifications" data-bs-toggle="dropdown" type="button" aria-label="Notifications">
@@ -175,7 +223,7 @@
             </div>
         </nav>
 
-        <main class="p-4">
+        <main class="sms-main p-4">
             {% if messages %}
                 {% for message in messages %}
                     <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
@@ -190,6 +238,23 @@
 </div>
 <script>
 (function () {
+    const toggle = document.getElementById("dashboard-nav-toggle");
+    const backdrop = document.querySelector("[data-sidebar-close]");
+    function setSidebarOpen(open) {
+        document.body.classList.toggle("sms-sidebar-open", open);
+        if (toggle) {
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+            toggle.setAttribute("aria-label", open ? "Close dashboard navigation" : "Open dashboard navigation");
+        }
+    }
+    if (toggle) toggle.addEventListener("click", () => setSidebarOpen(!document.body.classList.contains("sms-sidebar-open")));
+    if (backdrop) backdrop.addEventListener("click", () => setSidebarOpen(false));
+    document.addEventListener("keydown", event => { if (event.key === "Escape") setSidebarOpen(false); });
+    document.querySelectorAll("#dashboard-sidebar a").forEach(link => link.addEventListener("click", () => {
+        if (window.matchMedia("(max-width: 767.98px)").matches) setSidebarOpen(false);
+    }));
+    window.addEventListener("resize", () => { if (window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false); });
+
     const feedUrl = "{% url 'dashboard:notification_feed' %}";
     const badge = document.getElementById("notification-badge");
     const menu = document.getElementById("notification-menu");

@@ -1035,7 +1035,8 @@ def generate_fee_structure_pdf(*, structure, student=None, generated_by=None, re
         current_term_number = ledger["current_term"].term_number if ledger.get("current_term") else None
     tuition_totals_with_carry = list(tuition_term_totals)
     if student is not None and current_term_number in (1, 2, 3):
-        tuition_totals_with_carry[current_term_number - 1] += previous_balance
+        # Positive carry is a credit; negative carry is arrears.
+        tuition_totals_with_carry[current_term_number - 1] -= previous_balance
     term_totals = [
         tuition_term_totals[index] + (optional_term_totals[index] if student is not None else Decimal("0"))
         + (transport_term_totals[index] if student is not None else Decimal("0"))
@@ -1697,8 +1698,9 @@ def compute_student_account_summary(*, student: Student) -> dict[str, Any]:
     total_paid = (financial_history["current_term_paid"] if current_term
                   else _student_paid_total(student=student))
     opening_balance = financial_history["opening_balance"] if current_term else Decimal("0")
-    total_billed = current_charges + max(opening_balance, Decimal("0"))
-    outstanding_balance = opening_balance + current_charges - total_paid
+    total_billed = current_charges + max(-opening_balance, Decimal("0"))
+    # Positive means the family has credit; negative means fees remain due.
+    outstanding_balance = total_paid - current_charges + opening_balance
     overdue_source = current_term_invoices if current_term else invoices
     today = timezone.localtime(timezone.now()).date()
     arrears = overdue_source.filter(due_date__lt=today).exclude(
@@ -1867,6 +1869,8 @@ def build_student_financial_history(*, student: Student) -> dict[str, Any]:
         key=lambda row: (row["academic_year"].start_date,
                          row["term"].term_number if row["term"] else 99),
     )
+    # Signed account balance: payments above charges are positive credit;
+    # unpaid charges are negative arrears.
     running_balance = Decimal("0")
     years: dict[int, dict[str, Any]] = {}
     opening_balance = Decimal("0")
@@ -1874,7 +1878,7 @@ def build_student_financial_history(*, student: Student) -> dict[str, Any]:
         year = bucket["academic_year"]
         term = bucket["term"]
         balance_before = running_balance
-        running_balance += bucket["billed"] - bucket["paid"]
+        running_balance += bucket["paid"] - bucket["billed"]
         class_names = enrollment_classes.get(year.pk, [])
         class_name = ", ".join(class_names) or (
             enrollment_class_groups.get(year.pk, [None])[0].name

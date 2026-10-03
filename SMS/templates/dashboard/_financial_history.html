@@ -1,5 +1,5 @@
 <h5 class="mt-4">Financial History by Grade and Term</h5>
-<p class="small text-muted">Balances carry forward chronologically: positive amounts are arrears; negative amounts are unapplied credits.</p>
+<p class="small text-muted">Balances carry forward chronologically: positive amounts are credits; negative amounts are arrears.</p>
 {% for year in financial_history.years %}
 <div class="card sms-stat-card p-3 mb-3">
     <div class="d-flex justify-content-between flex-wrap mb-2"><h6>{{ year.class_name }} — {{ year.academic_year.name }}</h6><span class="fw-semibold">Year-end balance: Ksh {{ year.year_balance_display }}</span></div>
