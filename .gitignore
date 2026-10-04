@@ -3,4 +3,13 @@
 __pycache__
 .dead__/
 .vscode
+
+# Local configuration and runtime data must never be committed.
+**/.env
+**/.env.*
+!**/.env.example
+**/db.sqlite3
+**/media/
+**/__pycache__/
+*.py[cod]
 .venv/
