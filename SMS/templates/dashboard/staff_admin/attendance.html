@@ -26,20 +26,20 @@
             <tr>
                 <td>{{ row.staff.staff_id }} — {{ row.staff.user.get_full_name|default:row.staff.user.username }}</td>
                 <td>
-                    <select class="form-select form-select-sm" name="status_{{ row.staff.pk }}">
+                    <select class="form-select form-select-sm" name="status_{{ row.staff.pk }}" {% if request.user.role == "DEPUTY_PRINCIPAL" %}disabled{% endif %}>
                         <option value="">— not marked —</option>
                         {% for value, label in status_choices %}
                             <option value="{{ value }}" {% if row.record.status == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </td>
-                <td><input type="text" class="form-control form-control-sm" name="notes_{{ row.staff.pk }}" value="{{ row.record.notes|default:'' }}"></td>
+                <td><input type="text" class="form-control form-control-sm" name="notes_{{ row.staff.pk }}" value="{{ row.record.notes|default:'' }}" {% if request.user.role == "DEPUTY_PRINCIPAL" %}disabled{% endif %}></td>
             </tr>
         {% empty %}
             <tr><td colspan="3" class="text-muted">No active staff found.</td></tr>
         {% endfor %}
         </tbody>
     </table>
-    <button type="submit" class="btn btn-primary">Save Attendance</button>
+    {% if request.user.role != "DEPUTY_PRINCIPAL" %}<button type="submit" class="btn btn-primary">Save Attendance</button>{% endif %}
 </form>
 {% endblock %}

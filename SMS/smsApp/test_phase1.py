@@ -57,6 +57,31 @@ class Phase1RoleAndIsolationTests(TestCase):
         response = self.client.post("/academic-admin/students/", {})
         self.assertEqual(response.status_code, 403)
 
+    def test_deputy_can_write_academic_configuration_and_timetable_but_not_finance_or_approval(self):
+        deputy = User.objects.create_user(
+            username="deputy-rbac", password="pass12345", role=User.Role.DEPUTY_PRINCIPAL,
+        )
+        Staff.objects.create(
+            user=deputy, school=self.school_a, staff_id="D-RBAC",
+            job_title="Deputy Principal", date_hired=date(2026, 1, 1),
+        )
+        self.client.login(username=deputy.username, password="pass12345")
+        self.assertEqual(self.client.post("/academic-admin/configuration/", {
+            "action": "add_assessment_type", "name": "Mid Term", "code": "MID",
+        }).status_code, 302)
+        self.assertEqual(self.client.post("/academic-admin/timetable/", {
+            "action": "generate_periods", "start_time": "08:00", "end_time": "10:00",
+            "lesson_minutes": "40", "break_count": "1", "break_minutes": "10",
+        }).status_code, 302)
+        for path in ("/finance/", "/finance/family-payments/", "/academic-admin/parents/", "/academic-admin/results/"):
+            self.assertEqual(self.client.get(path).status_code, 403, path)
+        self.assertEqual(self.client.get("/academic-admin/attendance/").status_code, 200)
+        page = self.client.get("/academic-admin/").content.decode()
+        sidebar = page.split('<nav id="dashboard-sidebar"', 1)[1].split("</nav>", 1)[0]
+        self.assertNotIn("Finance Overview", sidebar)
+        self.assertNotIn("Result Approvals", sidebar)
+        self.assertNotIn("read-only", sidebar.lower())
+
 
 class StudentImportTests(TestCase):
     def setUp(self):

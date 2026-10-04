@@ -65,6 +65,10 @@ class User(AbstractUser):
         help_text="Account lock distinct from is_active — used for "
                    "Super Admin 'lock/unlock account' action (§5).",
     )
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text="Require a new password at the user's next browser sign-in.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

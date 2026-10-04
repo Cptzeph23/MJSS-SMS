@@ -1,6 +1,6 @@
 <!-- Absolute path: SMS/templates/dashboard/academic_admin/overview.html -->
 {% extends "dashboard/academic_admin/_academic_admin_base.html" %}
-{% block title %}{% if request.user.role == "PRINCIPAL" %}Principal{% elif request.user.role == "MANAGER" %}Manager{% else %}Academic Admin{% endif %} Overview — SMS
+{% block title %}{% if request.user.role == "PRINCIPAL" %}Principal{% elif request.user.role == "DEPUTY_PRINCIPAL" %}Deputy Principal{% elif request.user.role == "MANAGER" %}Manager{% else %}Academic Admin{% endif %} Overview — SMS
 {% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -13,12 +13,12 @@
 {% endblock %}
 
 {% block content %}
-<h3 class="mb-1">{% if request.user.role == "PRINCIPAL" %}Principal Dashboard{% elif request.user.role == "MANAGER" %}Manager Dashboard{% else %}Academic Admin Overview{% endif %}</h3>
+<h3 class="mb-1">{% if request.user.role == "PRINCIPAL" %}Principal Dashboard{% elif request.user.role == "DEPUTY_PRINCIPAL" %}Deputy Principal Dashboard{% elif request.user.role == "MANAGER" %}Manager Dashboard{% else %}Academic Admin Overview{% endif %}</h3>
 <p class="text-muted mb-4">Students, enrollment, and result-approval status across the school.</p>
 
 <div class="row g-3 mb-3">
     <div class="col-sm-6 col-lg-3"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold">Teachers</div><div class="fs-3 fw-semibold">{{ teachers_count }}</div></div></div>
-    {% if request.user.role != "PRINCIPAL" %}<div class="col-sm-6 col-lg-3"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold">Total Staff</div><div class="fs-3 fw-semibold">{{ staff_count }}</div></div></div>{% endif %}
+    {% if request.user.role != "PRINCIPAL" and request.user.role != "DEPUTY_PRINCIPAL" %}<div class="col-sm-6 col-lg-3"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold">Total Staff</div><div class="fs-3 fw-semibold">{{ staff_count }}</div></div></div>{% endif %}
 </div>
 
 <div class="row g-3">

@@ -153,6 +153,12 @@
         }
         .sms-stat-card.sms-accent-amber { border-left-color: var(--sms-amber); }
         .sms-stat-card.sms-accent-danger { border-left-color: var(--sms-danger); }
+
+        #sms-navigation-loading { display:none; position:fixed; inset:0; z-index:2000; background:rgba(255,255,255,.72); align-items:center; justify-content:center; }
+        #sms-navigation-loading.is-visible { display:flex; }
+        #sms-navigation-loading .loading-panel { background:#fff; border-radius:1rem; padding:1.25rem 1.75rem; box-shadow:0 8px 32px rgba(0,0,0,.14); color:var(--sms-maroon-700); }
+        body[data-user-role="DEPUTY_PRINCIPAL"] .config-card:has(input[value="enroll_student"]),
+        body[data-user-role="DEPUTY_PRINCIPAL"] .config-card:has(input[value="link_guardian"]) { display:none !important; }
         .sms-stat-card.sms-accent-charcoal { border-left-color: var(--sms-gray-400); }
 
         .breadcrumb-item.active { color: var(--sms-gray-400); }
@@ -160,7 +166,7 @@
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body data-user-role="{{ request.user.role|default:'' }}">
 <div class="d-flex">
     <nav id="dashboard-sidebar" class="sms-sidebar p-3" aria-label="Dashboard navigation" style="--sms-school-primary: {{ dashboard_school.primary_color|default:'#6f1d32' }}; --sms-school-secondary: {{ dashboard_school.secondary_color|default:'#4d4d4d' }};">
         <div class="fs-4 fw-semibold sms-brand mb-4 d-flex align-items-center gap-2">
@@ -242,6 +248,13 @@
         </main>
     </div>
 </div>
+<div id="sms-navigation-loading" role="status" aria-live="polite"><div class="loading-panel"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading…</div></div>
+{% if request.user.is_authenticated %}
+<div class="modal fade" id="session-warning" tabindex="-1" aria-labelledby="session-warning-title" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="session-warning-title">Still there?</h5></div><div class="modal-body">Your session is about to expire due to inactivity. You will be signed out in <strong id="session-countdown">10</strong> seconds.</div><div class="modal-footer"><button type="button" class="btn btn-primary" id="session-stay">Stay logged in</button></div></div></div>
+</div>
+<form id="session-csrf-form" class="d-none">{% csrf_token %}</form>
+{% endif %}
 <script>
 (function () {
     const toggle = document.getElementById("dashboard-nav-toggle");
@@ -280,6 +293,26 @@
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function(){
+  document.querySelectorAll('[data-toggle-password]').forEach(button=>button.addEventListener('click',()=>{const input=button.parentElement.querySelector('input[type="password"]')||button.parentElement.querySelector('input:not([type="hidden"])');if(!input)return;input.type=input.type==='password'?'text':'password';button.setAttribute('aria-label',input.type==='password'?'Show password':'Hide password');button.innerHTML=input.type==='password'?'<i class="bi bi-eye"></i>':'<i class="bi bi-eye-slash"></i>'; }));
+  if(document.body.dataset.userRole==='DEPUTY_PRINCIPAL')document.querySelectorAll('.config-card').forEach(card=>{if(card.querySelector('input[name="action"][value="enroll_student"],input[name="action"][value="link_guardian"]'))card.remove();});
+  const loading=document.getElementById('sms-navigation-loading');
+  document.addEventListener('click',event=>{const link=event.target.closest('a[href]');if(!link||!loading||event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||link.target==='_blank'||link.hasAttribute('download'))return;const target=new URL(link.href,location.href);if(target.origin!==location.origin||target.href===location.href||target.hash&&target.pathname===location.pathname||/\/(pdf|download)\//i.test(target.pathname))return;loading.classList.add('is-visible');});
+  document.addEventListener('submit',event=>{if(event.target.id==='session-csrf-form'||event.target.target==='_blank')return;if(loading)loading.classList.add('is-visible');});
+  const modalNode=document.getElementById('session-warning');if(!modalNode||!window.bootstrap)return;
+  const modal=new bootstrap.Modal(modalNode);const stay=document.getElementById('session-stay');const countNode=document.getElementById('session-countdown');let lastActivity=Date.now(),lastKeepAlive=Date.now(),warningTimer=null,logoutTimer=null,countdownTimer=null,remaining=10;
+  function clearTimers(){clearTimeout(warningTimer);clearTimeout(logoutTimer);clearInterval(countdownTimer);}
+  function pingSession(){if(Date.now()-lastKeepAlive<120000)return;const csrf=document.querySelector('#session-csrf-form [name=csrfmiddlewaretoken]').value;fetch("{% url 'dashboard:keep_alive' %}",{method:'POST',headers:{'X-CSRFToken':csrf,'X-Requested-With':'XMLHttpRequest'}}).then(response=>{if(response.ok)lastKeepAlive=Date.now();}).catch(()=>{});}
+  function logoutNow(){location.href="{% url 'dashboard:logout' %}";}
+  function warn(){remaining=10;countNode.textContent=remaining;modal.show();countdownTimer=setInterval(()=>{remaining--;countNode.textContent=Math.max(remaining,0);},1000);logoutTimer=setTimeout(logoutNow,10000);}
+  function schedule(){clearTimers();warningTimer=setTimeout(warn,300000);}
+  ['pointerdown','keydown','touchstart','wheel','click'].forEach(name=>document.addEventListener(name,()=>{if(modalNode.classList.contains('show'))return;lastActivity=Date.now();schedule();pingSession();},{passive:true}));
+  stay.addEventListener('click',()=>{const csrf=document.querySelector('#session-csrf-form [name=csrfmiddlewaretoken]').value;stay.disabled=true;fetch("{% url 'dashboard:keep_alive' %}",{method:'POST',headers:{'X-CSRFToken':csrf,'X-Requested-With':'XMLHttpRequest'}}).then(response=>{if(!response.ok)throw new Error();lastKeepAlive=Date.now();clearTimers();modal.hide();lastActivity=Date.now();schedule();}).catch(logoutNow).finally(()=>{stay.disabled=false;});});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastActivity>=300000&&!modalNode.classList.contains('show'))warn();});
+  schedule();
+})();
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

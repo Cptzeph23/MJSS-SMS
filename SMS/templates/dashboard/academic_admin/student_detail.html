@@ -29,7 +29,7 @@
                 </form>
             {% endif %}
         </div>
-        <div class="card sms-stat-card p-3 mt-3">
+        {% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mt-3">
             <div class="text-muted small mb-2">Change Student Status</div>
             <form method="post" class="d-flex gap-2">
                 {% csrf_token %}
@@ -41,9 +41,9 @@
                 <input type="text" name="reason" class="form-control" placeholder="Reason (optional)">
                 <button type="submit" class="btn btn-primary text-nowrap">Update</button>
             </form>
-        </div>
+        </div>{% endif %}
 
-        <div class="card sms-stat-card p-3 mt-3">
+        {% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mt-3">
             <div class="text-muted small mb-2">Transport &amp; Optional Subjects</div>
             {% if request.user.role == "DEPUTY_PRINCIPAL" %}
                 <p class="mb-0">Transport: {{ student.get_transport_option_display|default:student.transport_option }}{% if student.transport_route %} — {{ student.transport_route }}{% endif %}<br>Optional coding/robotics: {{ student.takes_coding_robotics|yesno:"Yes,No" }}</p>
@@ -57,9 +57,9 @@
                 <div class="col-12"><button class="btn btn-primary">Save finance options</button></div>
             </form>
             {% endif %}
-        </div>
+        </div>{% endif %}
 
-        <div class="card sms-stat-card p-3 mt-3">
+        {% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mt-3">
             <div class="text-muted small mb-2">Guardian Information</div>
             <ul class="list-unstyled mb-0">
                 {% for sg in guardians %}
@@ -72,7 +72,7 @@
                     <li class="text-muted">No guardians on file.</li>
                 {% endfor %}
             </ul>
-        </div>
+        </div>{% endif %}
     </div>
 
     <div class="col-md-6">

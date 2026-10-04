@@ -2,6 +2,9 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core.cache import cache
+from django.contrib.auth import logout
+from django.shortcuts import redirect
+from django.utils import timezone
 from django.http import HttpResponseNotFound
 
 from .models import RESERVED_SCHOOL_SUBDOMAINS, School, User
@@ -111,4 +114,44 @@ class TenantMiddleware:
         ):
             return HttpResponseNotFound("Not found.")
 
+        return self.get_response(request)
+
+
+class AccountSecurityMiddleware:
+    """Enforce temporary-password rotation and short browser idle sessions."""
+
+    IDLE_TIMEOUT_SECONDS = 300
+    WARNING_GRACE_SECONDS = 10
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        path = request.path_info
+        if user is None or not user.is_authenticated or path.startswith("/api/"):
+            return self.get_response(request)
+
+        allowed_during_password_change = {
+            "/login/", "/logout/", "/account/password/change/",
+        }
+        if user.must_change_password and path not in allowed_during_password_change:
+            return redirect("dashboard:password_change")
+
+        session_key = request.session.session_key
+        if session_key:
+            cache_key = f"browser-idle:{session_key}"
+            last_seen = cache.get(cache_key)
+            now = timezone.now().timestamp()
+            # Keep the timestamp for the session's full lifetime so an old
+            # timestamp remains detectable after the five-minute idle window.
+            timeout = getattr(settings, "SESSION_COOKIE_AGE", 1209600)
+            is_keepalive = path == "/session/keep-alive/"
+            is_background_poll = request.headers.get("X-Requested-With") == "XMLHttpRequest" and not is_keepalive
+            if last_seen and now - last_seen > self.IDLE_TIMEOUT_SECONDS + self.WARNING_GRACE_SECONDS:
+                cache.delete(cache_key)
+                logout(request)
+                return redirect("dashboard:login")
+            if not is_background_poll:
+                cache.set(cache_key, now, timeout=timeout)
         return self.get_response(request)

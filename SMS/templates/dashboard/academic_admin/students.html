@@ -10,7 +10,7 @@
 {% block content %}
 <h3 class="mb-4">Students</h3>
 
-{% if request.user.role == "DEPUTY_PRINCIPAL" %}<div class="alert alert-secondary">Read-only access: student records can be viewed, but not added or changed.</div>{% else %}<div class="card sms-stat-card p-3 mb-4">
+{% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4">
     <div class="text-muted small mb-2">Register Student</div>
     <form method="post" class="row g-2">
         {% csrf_token %}
@@ -27,7 +27,7 @@
                 {% for c in classes %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
             </select>
         </div>
-        <div class="col-md-3"><input type="password" name="password" class="form-control" placeholder="Password (optional — random if blank)"></div>
+        <div class="col-md-3"><div class="input-group"><input type="password" name="password" class="form-control" placeholder="Temporary password (optional)"><button class="btn btn-outline-secondary" type="button" data-toggle-password aria-label="Show password"><i class="bi bi-eye"></i></button></div></div>
         <div class="col-md-2"><select name="transport_option" class="form-select"><option value="NONE">No bus</option><option value="ONE_WAY">One way</option><option value="TWO_WAY">Two way</option></select></div>
         <div class="col-md-2"><select name="transport_period" class="form-select"><option value="NONE">No period</option><option value="MORNING">Morning</option><option value="EVENING">Evening</option><option value="BOTH">Both ways</option></select></div>
         <div class="col-md-2"><select name="transport_route" class="form-select"><option value="">Bus route (if using bus)</option>{% for route in transport_routes %}<option value="{{ route }}">{{ route }}</option>{% endfor %}</select></div>

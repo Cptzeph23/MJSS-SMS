@@ -25,6 +25,7 @@
                 <td>{{ r.student.admission_number }} — {{ r.student.user.get_full_name|default:r.student.user.username }}</td>
                 <td>{{ r.session.class_subject.class_group }} - {{ r.session.class_subject.subject.name }}</td>
                 <td>
+                    {% if request.user.role == "DEPUTY_PRINCIPAL" %}{{ r.get_status_display }}{% else %}
                     <form method="post" class="d-flex gap-1">
                         {% csrf_token %}
                         <input type="hidden" name="record_id" value="{{ r.pk }}">
@@ -33,13 +34,18 @@
                                 <option value="{{ value }}" {% if r.status == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
+                    {% endif %}
                 </td>
                 <td>
+                    {% if request.user.role == "DEPUTY_PRINCIPAL" %}{{ r.notes|default:"—" }}{% else %}
                         <input type="text" class="form-control form-control-sm" name="notes" value="{{ r.notes }}">
+                    {% endif %}
                 </td>
                 <td>
+                    {% if request.user.role != "DEPUTY_PRINCIPAL" %}
                         <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
                     </form>
+                    {% endif %}
                 </td>
             </tr>
         {% empty %}

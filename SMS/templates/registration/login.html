@@ -50,8 +50,8 @@
                     </div>
                     <div class="mb-4">
                         <label class="form-label" for="{{ form.password.id_for_label }}">Password</label>
-                        <input type="password" name="{{ form.password.html_name }}" class="form-control"
-                               id="{{ form.password.id_for_label }}" required autocomplete="current-password">
+                        <div class="input-group"><input type="password" name="{{ form.password.html_name }}" class="form-control"
+                               id="{{ form.password.id_for_label }}" required autocomplete="current-password"><button class="btn btn-outline-secondary" type="button" data-toggle-password="{{ form.password.id_for_label }}" aria-label="Show password"><i class="bi bi-eye"></i></button></div>
                         {% for error in form.password.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
                     </div>
                     <input type="hidden" name="next" value="{{ next }}">
@@ -64,6 +64,12 @@
     </div>
 </div>
 <script>
+    document.querySelectorAll("[data-toggle-password]").forEach(button => button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.togglePassword);
+        input.type = input.type === "password" ? "text" : "password";
+        button.setAttribute("aria-label", input.type === "password" ? "Show password" : "Hide password");
+        button.innerHTML = input.type === "password" ? '<i class="bi bi-eye"></i>' : '<i class="bi bi-eye-slash"></i>';
+    }));
     document.getElementById("login-form").addEventListener("submit", function () {
         const button = document.getElementById("login-submit");
         button.disabled = true;

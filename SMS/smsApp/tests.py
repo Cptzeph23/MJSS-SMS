@@ -4,9 +4,11 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .models import (
     AcademicYear,
@@ -381,11 +383,11 @@ class AuthAndDashboardTests(TestCase):
         self.client.login(username="admin1", password="pass12345")
         response = self.client.post(
             reverse("dashboard:super_admin_users"),
-            {"user_id": self.teacher.pk, "action": "role", "role": User.Role.CLASS_TEACHER},
+            {"user_id": self.teacher.pk, "action": "role", "role": User.Role.ACCOUNTANT},
         )
         self.assertRedirects(response, reverse("dashboard:super_admin_users"))
         self.teacher.refresh_from_db()
-        self.assertEqual(self.teacher.role, User.Role.CLASS_TEACHER)
+        self.assertEqual(self.teacher.role, User.Role.ACCOUNTANT)
         self.assertTrue(
             AuditLog.objects.filter(
                 target_model="User", target_object_id=str(self.teacher.pk),
@@ -430,6 +432,53 @@ class AuthAndDashboardTests(TestCase):
         response = self.client.get(reverse("dashboard:logout"))
 
         self.assertRedirects(response, reverse("dashboard:login"))
+
+    def test_temporary_password_requires_change_then_new_password_works(self):
+        user = User.objects.create_user(
+            username="firstlogin", password="Temp-Password-123!", role=User.Role.STUDENT,
+            must_change_password=True,
+        )
+        response = self.client.post(reverse("dashboard:login"), {
+            "username": user.username, "password": "Temp-Password-123!",
+        })
+        self.assertRedirects(response, reverse("dashboard:password_change"), fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse("dashboard:password_change")), "Set your password")
+        mismatch = self.client.post(reverse("dashboard:password_change"), {
+            "new_password": "Strong-New-Password-2026!", "confirm_password": "different",
+        })
+        self.assertEqual(mismatch.status_code, 400)
+        changed = self.client.post(reverse("dashboard:password_change"), {
+            "new_password": "Strong-New-Password-2026!", "confirm_password": "Strong-New-Password-2026!",
+        })
+        self.assertEqual(changed.status_code, 302)
+        user.refresh_from_db()
+        self.assertFalse(user.must_change_password)
+        self.assertTrue(user.check_password("Strong-New-Password-2026!"))
+
+    def test_super_admin_can_change_username_and_issue_temporary_password(self):
+        user = User.objects.create_user(username="managed-account", password="Old-Password-123!", role=User.Role.TEACHER)
+        self.client.login(username="admin1", password="pass12345")
+        response = self.client.post(reverse("dashboard:super_admin_users"), {
+            "action": "username", "user_id": user.pk, "username": "new-managed-account",
+        })
+        self.assertEqual(response.status_code, 302)
+        response = self.client.post(reverse("dashboard:super_admin_users"), {
+            "action": "reset_password", "user_id": user.pk, "password": "Temporary-Reset-2026!",
+        })
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertEqual(user.username, "new-managed-account")
+        self.assertTrue(user.must_change_password)
+        self.assertTrue(user.check_password("Temporary-Reset-2026!"))
+
+    def test_idle_session_expires_on_next_request_after_timeout(self):
+        self.client.login(username="admin1", password="pass12345")
+        self.client.get(reverse("dashboard:super_admin"))
+        session_key = self.client.session.session_key
+        cache.set(f"browser-idle:{session_key}", timezone.now().timestamp() - 311, timeout=3600)
+        response = self.client.get(reverse("dashboard:super_admin"))
+        self.assertRedirects(response, reverse("dashboard:login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
         dashboard_response = self.client.get(reverse("dashboard:super_admin"))
         self.assertRedirects(
             dashboard_response,

@@ -2,8 +2,10 @@
 {% extends "base.html" %}
 
 {% block sidebar_items %}
-    {% if request.user.role == 'MANAGER' or request.user.role == 'DEPUTY_PRINCIPAL' %}
+    {% if request.user.role == 'MANAGER' %}
         {% include "dashboard/principal/_sidebar.html" %}
+    {% elif request.user.role == 'DEPUTY_PRINCIPAL' %}
+        {% include "dashboard/principal/_deputy_sidebar.html" %}
     {% elif request.user.role == 'PRINCIPAL' %}
         {% include "dashboard/principal/_principal_sidebar.html" %}
     {% else %}

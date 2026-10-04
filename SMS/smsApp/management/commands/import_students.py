@@ -31,6 +31,7 @@ class Command(BaseCommand):
                 if missing:
                     raise CommandError("Missing required columns: " + ", ".join(sorted(missing)))
                 created = updated = 0
+                temporary_credentials = []
                 for line_number, row in enumerate(reader, start=2):
                     admission_number = (row.get("admission_number") or "").strip()
                     username = (row.get("username") or "").strip()
@@ -54,11 +55,14 @@ class Command(BaseCommand):
                         if user is not None and hasattr(user, "student_profile"):
                             raise CommandError(f"Line {line_number}: username is already another student.")
                         if user is None:
+                            temporary_password = options["default_password"] or get_random_string(16)
                             user = User.objects.create_user(
                                 username=username,
-                                password=options["default_password"] or get_random_string(16),
+                                password=temporary_password,
                                 role=User.Role.STUDENT,
+                                must_change_password=True,
                             )
+                            temporary_credentials.append(f"{username}: {temporary_password}")
                         elif user.role != User.Role.STUDENT:
                             raise CommandError(f"Line {line_number}: username belongs to a non-student user.")
                         student = Student.objects.create(
@@ -86,3 +90,7 @@ class Command(BaseCommand):
         except FileNotFoundError as exc:
             raise CommandError(f"CSV file not found: {csv_path}") from exc
         self.stdout.write(self.style.SUCCESS(f"Imported students: {created} created, {updated} updated."))
+        if temporary_credentials:
+            self.stdout.write("Temporary student credentials (change required at first sign-in):")
+            for credential in temporary_credentials:
+                self.stdout.write(credential)

@@ -19,13 +19,13 @@
     <div class="col-md-6">
         <div class="card sms-stat-card p-3">
             <div class="text-muted small mb-2">Edit Profile</div>
-            {% if request.user.role == "DEPUTY_PRINCIPAL" %}<div class="alert alert-secondary">Read-only view. Deputy Principals cannot edit staff records.</div>{% else %}<form method="post">
+            {% if request.user.role != "DEPUTY_PRINCIPAL" %}<form method="post">
                 {% csrf_token %}
                 <div class="mb-2">
                     <label class="form-label small">Job Title</label>
                     <input type="text" name="job_title" class="form-control" value="{{ staff.job_title }}">
                 </div>
-                {% if request.user.role != "PRINCIPAL" %}<div class="mb-2">
+                {% if request.user.role != "PRINCIPAL" and request.user.role != "DEPUTY_PRINCIPAL" %}<div class="mb-2">
                     <label class="form-label small">Salary (Kenyan shillings)</label>
                     <div class="input-group"><span class="input-group-text">Ksh</span><input type="number" step="0.01" min="0" name="salary" class="form-control" value="{{ staff.salary }}"></div>
                 </div>{% endif %}

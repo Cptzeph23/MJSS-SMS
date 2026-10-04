@@ -3271,7 +3271,7 @@ def register_student(
     new_user = User.objects.create_user(
         username=username, password=password or get_random_string(16),
         first_name=first_name, last_name=last_name, email=email,
-        role=User.Role.STUDENT,
+        role=User.Role.STUDENT, must_change_password=True,
     )
     student = Student.objects.create(
         user=new_user, school=school, admission_number=admission_number,
