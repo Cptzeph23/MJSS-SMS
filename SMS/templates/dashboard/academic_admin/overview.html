@@ -112,15 +112,30 @@
     const genders = JSON.parse(document.getElementById('academic-gender-data').textContent);
     const classes = JSON.parse(document.getElementById('academic-class-data').textContent);
     const assessments = JSON.parse(document.getElementById('academic-assessment-data').textContent);
-    const genderColors = ['#d95f8d', '#3978b8', '#8b5bb5'];
+    const schoolPrimary = getComputedStyle(document.body).getPropertyValue('--sms-school-primary').trim() || '#8c2f46';
+    const schoolSecondary = getComputedStyle(document.body).getPropertyValue('--sms-school-secondary').trim() || '#6f1d32';
+    function schoolPalette(hex, count) {
+        const raw = hex.replace('#', '');
+        const channels = raw.length === 3
+            ? raw.split('').map(value => parseInt(value + value, 16))
+            : [0, 2, 4].map(index => parseInt(raw.slice(index, index + 2), 16));
+        return Array.from({length: count}, (_, index) => {
+            const position = count < 2 ? 0 : index / (count - 1);
+            const mix = (position - .5) * .42;
+            const target = mix > 0 ? 255 : 0;
+            return '#' + channels.map(channel => Math.round(channel * (1 - Math.abs(mix)) + target * Math.abs(mix)).toString(16).padStart(2, '0')).join('');
+        });
+    }
+    const studentPalette = schoolPalette(schoolPrimary, Math.max(classes.length, 2));
+    const feePrimaryPalette = schoolPalette(schoolPrimary, Math.max(classes.length, 2));
+    const feeSecondaryPalette = schoolPalette(schoolSecondary, Math.max(classes.length, 2));
+    const genderColors = [studentPalette[0], schoolSecondary, studentPalette[studentPalette.length - 1]];
     new Chart(document.getElementById('studentGenderChart'), {type:'pie', data:{labels:genders.map(x=>x.label+' · '+x.percentage+'%'), datasets:[{data:genders.map(x=>x.percentage), backgroundColor:genderColors}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:context=>genders[context.dataIndex].label+': '+context.raw+'% ('+genders[context.dataIndex].count+' students)'}}}}});
-    new Chart(document.getElementById('classStudentsChart'), {type:'bar', data:{labels:classes.map(x=>x.name), datasets:[{label:'Active students', data:classes.map(x=>x.student_count), backgroundColor:'#8c2f46'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
-    new Chart(document.getElementById('assessmentWorkflowChart'), {type:'bar', data:{labels:assessments.map(x=>x.label), datasets:[{label:'Assessments', data:assessments.map(x=>x.count), backgroundColor:'#d9822b'}]}, options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
+    new Chart(document.getElementById('classStudentsChart'), {type:'bar', data:{labels:classes.map(x=>x.name), datasets:[{label:'Active students', data:classes.map(x=>x.student_count), backgroundColor:classes.map((_,i)=>studentPalette[i%studentPalette.length])}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
+    new Chart(document.getElementById('assessmentWorkflowChart'), {type:'bar', data:{labels:assessments.map(x=>x.label), datasets:[{label:'Assessments', data:assessments.map(x=>x.count), backgroundColor:schoolSecondary}]}, options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
     {% if request.user.role == "MANAGER" %}
     const fees = JSON.parse(document.getElementById('academic-fees-data').textContent);
-    const billedColors = ['#6f1d32','#236b55','#295e9e','#a85d24','#7551a3','#218a91'];
-    const paidColors = ['#cf6a7e','#5a9c76','#6794cf','#dfa252','#a286c7','#62b4b0'];
-    new Chart(document.getElementById('classFeesChart'), {type:'bar', data:{labels:fees.map(x=>x.name), datasets:[{label:'Total billed (Ksh)',data:fees.map(x=>x.total_billed),backgroundColor:fees.map((_,i)=>billedColors[i%billedColors.length])},{label:'Total paid (Ksh)',data:fees.map(x=>x.total_paid),backgroundColor:fees.map((_,i)=>paidColors[i%paidColors.length])}]}, options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'bottom'}}}});
+    new Chart(document.getElementById('classFeesChart'), {type:'bar', data:{labels:fees.map(x=>x.name), datasets:[{label:'Total billed (Ksh)',data:fees.map(x=>x.total_billed),backgroundColor:fees.map((_,i)=>feePrimaryPalette[i%feePrimaryPalette.length])},{label:'Total paid (Ksh)',data:fees.map(x=>x.total_paid),backgroundColor:fees.map((_,i)=>feeSecondaryPalette[i%feeSecondaryPalette.length])}]}, options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'bottom'}}}});
     {% endif %}
 }());
 </script>

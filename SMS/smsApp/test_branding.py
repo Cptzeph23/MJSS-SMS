@@ -12,6 +12,10 @@ class BrandingTemplateTests(SimpleTestCase):
         base = Path("templates/base.html").read_text()
         self.assertIn("--sms-maroon-900", base)
         self.assertIn("--sms-gray-900", base)
+        self.assertIn("background-color: var(--sms-school-primary, var(--sms-maroon-500))", base)
+        self.assertIn("border-left: 4px solid var(--sms-school-primary, var(--sms-maroon-500))", base)
+        self.assertIn("--sms-school-primary: {{ dashboard_school.primary_color", base)
+        self.assertIn("--sms-school-secondary: {{ dashboard_school.secondary_color", base)
         self.assertNotIn("--sms-jungle-", base)
         self.assertNotIn("--sms-charcoal-", base)
 
@@ -38,3 +42,10 @@ class BrandingTemplateTests(SimpleTestCase):
         self.assertIn("rel=\"icon\" href=\"{{ login_school.logo.url }}\"", login)
         self.assertIn("--maroon-900", login)
         self.assertIn("Welcome back", login)
+
+    def test_dashboard_charts_use_school_theme_palette(self):
+        academic = Path("templates/dashboard/academic_admin/overview.html").read_text()
+        super_admin = Path("templates/dashboard/super_admin.html").read_text()
+        self.assertIn("schoolPalette(schoolPrimary", academic)
+        self.assertIn("backgroundColor:schools.map(x=>x.primary_color)", super_admin)
+        self.assertIn("backgroundColor:schools.map(x=>x.secondary_color)", super_admin)

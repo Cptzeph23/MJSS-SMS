@@ -636,6 +636,8 @@ class SuperAdminDashboardView(RoleRequiredMixin, TemplateView):
                 "school_chart": [
                     {
                         "name": school.name,
+                        "primary_color": school.primary_color,
+                        "secondary_color": school.secondary_color,
                         "students": school_stats.get(school.pk, {}).get("_students", 0),
                         "staff": school_stats.get(school.pk, {}).get("_staff", 0),
                         "classes": school_stats.get(school.pk, {}).get("_classes", 0),

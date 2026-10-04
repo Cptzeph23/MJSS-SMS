@@ -115,9 +115,9 @@
 (function () {
     const schools = JSON.parse(document.getElementById('school-chart-data').textContent);
     const labels = schools.map(x=>x.name);
-    new Chart(document.getElementById('schoolPopulationChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Students',data:schools.map(x=>x.students),backgroundColor:'#8c2f46'},{label:'Staff',data:schools.map(x=>x.staff),backgroundColor:'#b66b7c'},{label:'Classes',data:schools.map(x=>x.classes),backgroundColor:'#d9822b'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
-    new Chart(document.getElementById('schoolFinanceChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Collected',data:schools.map(x=>x.collected),backgroundColor:'#6f1d32'},{label:'Outstanding',data:schools.map(x=>x.outstanding),backgroundColor:'#d9822b'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}}}});
-    new Chart(document.getElementById('schoolAttendanceChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Attendance %',data:schools.map(x=>x.attendance),backgroundColor:'#4a1020'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:100}} , plugins:{legend:{display:false}}}});
+    new Chart(document.getElementById('schoolPopulationChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Students',data:schools.map(x=>x.students),backgroundColor:schools.map(x=>x.primary_color)},{label:'Staff',data:schools.map(x=>x.staff),backgroundColor:schools.map(x=>x.secondary_color)},{label:'Classes',data:schools.map(x=>x.classes),backgroundColor:schools.map(x=>x.primary_color)}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+    new Chart(document.getElementById('schoolFinanceChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Collected',data:schools.map(x=>x.collected),backgroundColor:schools.map(x=>x.primary_color)},{label:'Outstanding',data:schools.map(x=>x.outstanding),backgroundColor:schools.map(x=>x.secondary_color)}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}}}});
+    new Chart(document.getElementById('schoolAttendanceChart'), {type:'bar', data:{labels:labels, datasets:[{label:'Attendance %',data:schools.map(x=>x.attendance),backgroundColor:schools.map(x=>x.primary_color)}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:100}} , plugins:{legend:{display:false}}}});
 }());
 </script>
 {% endblock %}
