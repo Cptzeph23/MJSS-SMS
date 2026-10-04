@@ -20,9 +20,21 @@ class BrandingTemplateTests(SimpleTestCase):
         self.assertIn("dashboard_school.logo.url", base)
         self.assertIn("dashboard_school.short_name", base)
         self.assertIn("bi-mortarboard-fill", base)
+        self.assertIn("rel=\"icon\" href=\"{{ dashboard_school.logo.url }}\"", base)
+
+    def test_school_logo_upload_is_available_in_both_school_admin_forms(self):
+        config = Path("templates/dashboard/super_admin/school_config.html").read_text()
+        from smsApp.admin import SchoolAdmin
+
+        self.assertIn('enctype="multipart/form-data"', config)
+        self.assertIn('name="logo" type="file"', config)
+        self.assertIn("Upload/replace school logo", config)
+        self.assertIn("logo", SchoolAdmin.fields)
+        self.assertIn("logo_preview", SchoolAdmin.readonly_fields)
 
     def test_login_is_school_branded(self):
         login = Path("templates/registration/login.html").read_text()
         self.assertIn("login_school.logo.url", login)
+        self.assertIn("rel=\"icon\" href=\"{{ login_school.logo.url }}\"", login)
         self.assertIn("--maroon-900", login)
         self.assertIn("Welcome back", login)

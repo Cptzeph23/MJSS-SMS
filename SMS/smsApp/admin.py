@@ -2,6 +2,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.db.models import Case, DecimalField, F, Sum, When
+from django.utils.html import format_html
 
 from .models import (
     AcademicYear,
@@ -93,6 +94,23 @@ class SchoolAdmin(admin.ModelAdmin):
     list_display = ("name", "short_name", "code", "subdomain", "is_active", "created_at")
     list_filter = ("is_active",)
     search_fields = ("name", "short_name", "code", "subdomain")
+    fields = (
+        "name", "short_name", "code", "subdomain", "logo", "logo_preview",
+        "motto", "address", "phone_number", "email", "primary_color",
+        "secondary_color", "established_date", "enable_position_ranking",
+        "is_active",
+    )
+    readonly_fields = ("logo_preview",)
+
+    @admin.display(description="Current school logo")
+    def logo_preview(self, obj):
+        if not obj or not obj.logo:
+            return "No logo uploaded yet. Choose a file in the School logo field above."
+        return format_html(
+            '<img src="{}" alt="{}" style="max-width:180px;max-height:100px;object-fit:contain">',
+            obj.logo.url,
+            f"{obj.name} logo",
+        )
 
 
 @admin.register(Campus)
