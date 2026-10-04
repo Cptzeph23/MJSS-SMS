@@ -359,9 +359,17 @@ class AuthAndDashboardTests(TestCase):
             user=student_user, school=school, admission_number="ADM100",
             admission_date=datetime.date(2026, 1, 10),
         )
+        staff_user = User.objects.create_user(
+            username="staffcount1", password="pass12345", role=User.Role.TEACHER
+        )
+        Staff.objects.create(
+            user=staff_user, school=school, staff_id="STF100", job_title="Teacher",
+            date_hired=datetime.date(2026, 1, 10),
+        )
         self.client.login(username="admin1", password="pass12345")
         response = self.client.get(reverse("dashboard:super_admin"))
         self.assertEqual(response.context["total_students"], 1)
+        self.assertEqual(response.context["total_staff"], 1)
 
     def test_super_admin_sidebar_sections_are_available(self):
         self.client.login(username="admin1", password="pass12345")
@@ -3779,7 +3787,7 @@ class AcademicAdminDashboardTests(TestCase):
     def test_principal_overview_shows_gender_and_current_term_class_fees(self):
         self.client.logout()
         principal = User.objects.create_user(
-            username="chartprincipal", password="pass12345", role=User.Role.PRINCIPAL_DIRECTOR,
+            username="chartmanager", password="pass12345", role=User.Role.MANAGER,
         )
         self.student.gender = Student.Gender.FEMALE
         self.student.save(update_fields=["gender", "updated_at"])
@@ -3796,7 +3804,7 @@ class AcademicAdminDashboardTests(TestCase):
             invoice=invoice, amount=Decimal("5000"), payment_method=Payment.Method.CASH,
             payment_date=datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
         )
-        self.client.login(username="chartprincipal", password="pass12345")
+        self.client.login(username="chartmanager", password="pass12345")
         response = self.client.get(reverse("dashboard:academic_admin_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["student_gender_recorded"], 1)
@@ -3805,6 +3813,47 @@ class AcademicAdminDashboardTests(TestCase):
         self.assertEqual(response.context["fee_class_chart"][0]["total_billed"], 20000)
         self.assertEqual(response.context["fee_class_chart"][0]["total_paid"], 5000)
         self.assertContains(response, "Current-term fees by class")
+
+    def test_new_principal_is_limited_to_academic_and_teacher_modules(self):
+        self.client.logout()
+        principal = User.objects.create_user(
+            username="academicprincipal", password="pass12345", role=User.Role.PRINCIPAL,
+        )
+        Staff.objects.create(
+            user=principal, school=self.school, staff_id="PR-1", job_title="Principal",
+            date_hired=datetime.date(2026, 1, 1),
+        )
+        teacher_user = User.objects.create_user(
+            username="principalteacher", password="pass12345", role=User.Role.TEACHER,
+        )
+        Staff.objects.create(
+            user=teacher_user, school=self.school, staff_id="T-1", job_title="Teacher",
+            salary=Decimal("90000"), date_hired=datetime.date(2026, 1, 1),
+        )
+        other_staff_user = User.objects.create_user(
+            username="principalfnance", password="pass12345", role=User.Role.ACCOUNTANT,
+        )
+        Staff.objects.create(
+            user=other_staff_user, school=self.school, staff_id="F-1", job_title="Accountant",
+            salary=Decimal("120000"), date_hired=datetime.date(2026, 1, 1),
+        )
+        self.client.login(username="academicprincipal", password="pass12345")
+
+        for route_name in (
+            "academic_admin_dashboard", "academic_admin_students", "principal_configuration",
+            "principal_timetable", "academic_admin_attendance_correction",
+            "staff_admin_staff_list", "staff_admin_attendance", "staff_admin_leave_requests",
+        ):
+            self.assertEqual(self.client.get(reverse(f"dashboard:{route_name}")).status_code, 200, route_name)
+
+        teacher_page = self.client.get(reverse("dashboard:staff_admin_staff_list"))
+        self.assertContains(teacher_page, "principalteacher")
+        self.assertNotContains(teacher_page, "principalfnance")
+        self.assertNotContains(teacher_page, "120000")
+        self.assertNotContains(teacher_page, "Salary")
+        self.assertEqual(self.client.get(reverse("dashboard:principal_parents")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("dashboard:finance_dashboard")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("dashboard:finance_family_payment")).status_code, 403)
 
     def test_students_list_shows_registered_student(self):
         response = self.client.get(reverse("dashboard:academic_admin_students"))

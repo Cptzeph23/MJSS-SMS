@@ -16,19 +16,19 @@ class Phase1RoleAndIsolationTests(TestCase):
         self.school_b = School.objects.create(name="B School", code="B")
         self.admin = User.objects.create_user(
             username="principal", password="pass12345",
-            role=User.Role.PRINCIPAL_DIRECTOR,
+            role=User.Role.MANAGER,
         )
         Staff.objects.create(
             user=self.admin, school=self.school_a, staff_id="P-A",
             job_title="Principal", date_hired=date(2026, 1, 1),
         )
 
-    def test_principal_role_routes_to_school_dashboard(self):
+    def test_manager_role_routes_to_school_dashboard(self):
         self.client.login(username="principal", password="pass12345")
         response = self.client.get("/")
         self.assertRedirects(response, "/academic-admin/")
 
-    def test_principal_cannot_view_another_school_student(self):
+    def test_manager_cannot_view_another_school_student(self):
         foreign_user = User.objects.create_user(
             username="foreignstudent", password="pass12345", role=User.Role.STUDENT
         )
@@ -39,6 +39,11 @@ class Phase1RoleAndIsolationTests(TestCase):
         self.client.login(username="principal", password="pass12345")
         response = self.client.get(f"/academic-admin/students/{foreign_student.pk}/")
         self.assertEqual(response.status_code, 404)
+
+    def test_manager_retains_parent_and_finance_access(self):
+        self.client.login(username="principal", password="pass12345")
+        self.assertEqual(self.client.get("/academic-admin/parents/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/").status_code, 200)
 
     def test_deputy_cannot_register_student(self):
         deputy = User.objects.create_user(

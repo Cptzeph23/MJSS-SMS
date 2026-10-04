@@ -2,8 +2,10 @@
 {% extends "base.html" %}
 
 {% block sidebar_items %}
-    {% if request.user.role == 'PRINCIPAL_DIRECTOR' or request.user.role == 'DEPUTY_PRINCIPAL' %}
+    {% if request.user.role == 'MANAGER' or request.user.role == 'DEPUTY_PRINCIPAL' %}
         {% include "dashboard/principal/_sidebar.html" %}
+    {% elif request.user.role == 'PRINCIPAL' %}
+        {% include "dashboard/principal/_principal_sidebar.html" %}
     {% else %}
         <li class="nav-item"><a class="nav-link {% if active == 'overview' %}active{% endif %}" href="{% url 'dashboard:academic_admin_dashboard' %}"><i class="bi bi-grid-1x2 me-2"></i>Overview</a></li>
         <li class="nav-item"><a class="nav-link {% if active == 'students' %}active{% endif %}" href="{% url 'dashboard:academic_admin_students' %}"><i class="bi bi-people me-2"></i>Students</a></li>

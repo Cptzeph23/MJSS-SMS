@@ -1,6 +1,6 @@
 <!-- Absolute path: SMS/templates/dashboard/academic_admin/overview.html -->
 {% extends "dashboard/academic_admin/_academic_admin_base.html" %}
-{% block title %}Academic Admin Overview — SMS
+{% block title %}{% if request.user.role == "PRINCIPAL" %}Principal{% elif request.user.role == "MANAGER" %}Manager{% else %}Academic Admin{% endif %} Overview — SMS
 {% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -13,12 +13,12 @@
 {% endblock %}
 
 {% block content %}
-<h3 class="mb-1">Academic Admin Overview</h3>
+<h3 class="mb-1">{% if request.user.role == "PRINCIPAL" %}Principal Dashboard{% elif request.user.role == "MANAGER" %}Manager Dashboard{% else %}Academic Admin Overview{% endif %}</h3>
 <p class="text-muted mb-4">Students, enrollment, and result-approval status across the school.</p>
 
 <div class="row g-3 mb-3">
     <div class="col-sm-6 col-lg-3"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold">Teachers</div><div class="fs-3 fw-semibold">{{ teachers_count }}</div></div></div>
-    <div class="col-sm-6 col-lg-3"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold">Total Staff</div><div class="fs-3 fw-semibold">{{ staff_count }}</div></div></div>
+    {% if request.user.role != "PRINCIPAL" %}<div class="col-sm-6 col-lg-3"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold">Total Staff</div><div class="fs-3 fw-semibold">{{ staff_count }}</div></div></div>{% endif %}
 </div>
 
 <div class="row g-3">
@@ -101,12 +101,12 @@
     <div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-1">Students by gender (%)</div><div class="small text-muted mb-2">Based on {{ student_gender_recorded }} students with gender recorded.</div><div class="dashboard-chart"><canvas id="studentGenderChart"></canvas></div></div></div>
     <div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Students by class</div><div class="dashboard-chart"><canvas id="classStudentsChart"></canvas></div></div></div>
     <div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Assessment workflow</div><div class="dashboard-chart"><canvas id="assessmentWorkflowChart"></canvas></div></div></div>
-    {% if request.user.role == "PRINCIPAL_DIRECTOR" %}<div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Current-term fees by class</div><div class="dashboard-chart"><canvas id="classFeesChart"></canvas></div></div></div>{% endif %}
+    {% if request.user.role == "MANAGER" %}<div class="col-lg-6"><div class="card sms-stat-card p-3 h-100"><div class="text-muted small text-uppercase fw-semibold mb-2">Current-term fees by class</div><div class="dashboard-chart"><canvas id="classFeesChart"></canvas></div></div></div>{% endif %}
 </div>
 {{ gender_chart|json_script:"academic-gender-data" }}
 {{ class_chart|json_script:"academic-class-data" }}
 {{ assessment_chart|json_script:"academic-assessment-data" }}
-{% if request.user.role == "PRINCIPAL_DIRECTOR" %}{{ fee_class_chart|json_script:"academic-fees-data" }}{% endif %}
+{% if request.user.role == "MANAGER" %}{{ fee_class_chart|json_script:"academic-fees-data" }}{% endif %}
 <script>
 (function () {
     const genders = JSON.parse(document.getElementById('academic-gender-data').textContent);
@@ -116,7 +116,7 @@
     new Chart(document.getElementById('studentGenderChart'), {type:'pie', data:{labels:genders.map(x=>x.label+' · '+x.percentage+'%'), datasets:[{data:genders.map(x=>x.percentage), backgroundColor:genderColors}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:context=>genders[context.dataIndex].label+': '+context.raw+'% ('+genders[context.dataIndex].count+' students)'}}}}});
     new Chart(document.getElementById('classStudentsChart'), {type:'bar', data:{labels:classes.map(x=>x.name), datasets:[{label:'Active students', data:classes.map(x=>x.student_count), backgroundColor:'#8c2f46'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
     new Chart(document.getElementById('assessmentWorkflowChart'), {type:'bar', data:{labels:assessments.map(x=>x.label), datasets:[{label:'Assessments', data:assessments.map(x=>x.count), backgroundColor:'#d9822b'}]}, options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}}, plugins:{legend:{display:false}}}});
-    {% if request.user.role == "PRINCIPAL_DIRECTOR" %}
+    {% if request.user.role == "MANAGER" %}
     const fees = JSON.parse(document.getElementById('academic-fees-data').textContent);
     const billedColors = ['#6f1d32','#236b55','#295e9e','#a85d24','#7551a3','#218a91'];
     const paidColors = ['#cf6a7e','#5a9c76','#6794cf','#dfa252','#a286c7','#62b4b0'];

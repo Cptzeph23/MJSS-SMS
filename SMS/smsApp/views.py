@@ -92,7 +92,7 @@ from .middleware import user_can_access_school
 # Roles retained in the database for backwards compatibility but not offered
 # for new assignments while those modules are inactive.
 ACTIVE_ROLE_VALUES = {
-    User.Role.SUPER_ADMIN, User.Role.PRINCIPAL_DIRECTOR,
+    User.Role.SUPER_ADMIN, User.Role.MANAGER, User.Role.PRINCIPAL,
     User.Role.DEPUTY_PRINCIPAL, User.Role.TEACHER, User.Role.PARENT,
     User.Role.STUDENT, User.Role.ACCOUNTANT,
 }
@@ -383,10 +383,14 @@ class GlobalSearchView(LoginRequiredMixin, View):
                 except Staff.DoesNotExist:
                     school = None
                 if school is None and role in {
-                    User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL,
+                    User.Role.MANAGER, User.Role.PRINCIPAL, User.Role.DEPUTY_PRINCIPAL,
                     User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
                 }:
-                    school = FinanceRequiredMixin().get_school(request)
+                    school = (
+                        AcademicAdminRequiredMixin().get_school(request)
+                        if role == User.Role.PRINCIPAL
+                        else FinanceRequiredMixin().get_school(request)
+                    )
                 if school:
                     invoice_scope = Invoice.objects.filter(school=school)
                     payment_scope = Payment.objects.filter(
@@ -401,7 +405,32 @@ class GlobalSearchView(LoginRequiredMixin, View):
                     ).select_related("invoice__student__user", "family_guardian")
                     invoice_url = lambda obj: reverse("dashboard:finance_invoice_detail", args=[obj.pk])
                     payment_url = lambda obj: reverse("dashboard:finance_family_payment")
-                    if role in {User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.ACADEMIC_ADMIN}:
+                    if role == User.Role.PRINCIPAL:
+                        students = Student.objects.filter(school=school)
+                        if not search_students:
+                            students = students.filter(text_q)
+                        students = students.select_related("user", "current_class")
+                        staff_records = Staff.objects.filter(
+                            school=school, user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER],
+                        ).filter(
+                            Q(staff_id__icontains=query) | Q(job_title__icontains=query)
+                            | Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query)
+                        ).select_related("user")
+                        classes = Class.objects.filter(school=school, name__icontains=query)
+                        subjects = Subject.objects.filter(school=school, name__icontains=query)
+                        student_url = lambda obj: reverse("dashboard:academic_admin_student_detail", args=[obj.pk])
+                        add(staff_records, kind="Teacher", title=lambda obj: obj.user.get_full_name() or obj.staff_id,
+                            detail=lambda obj: f"{obj.staff_id} · {obj.job_title}",
+                            url=lambda obj: reverse("dashboard:staff_admin_staff_list") + "?teachers=1")
+                        add(classes, kind="Class", title=lambda obj: obj.name,
+                            detail=lambda obj: "School class", url=lambda obj: reverse("dashboard:principal_configuration"))
+                        add(subjects, kind="Subject", title=lambda obj: obj.name,
+                            detail=lambda obj: obj.code, url=lambda obj: reverse("dashboard:principal_configuration"))
+                        invoices = Invoice.objects.none()
+                        payment_qs = Payment.objects.none()
+                        invoice_url = lambda obj: reverse("dashboard:home")
+                        payment_url = invoice_url
+                    elif role in {User.Role.MANAGER, User.Role.DEPUTY_PRINCIPAL, User.Role.ACADEMIC_ADMIN}:
                         students = Student.objects.filter(school=school)
                         if not search_students:
                             students = students.filter(text_q)
@@ -540,7 +569,7 @@ class SuperAdminDashboardView(RoleRequiredMixin, TemplateView):
         school_stats = {}
         for row in School.objects.all().annotate(
             _students=Count("students", filter=_Q(students__is_active=True), distinct=True),
-            _staff=Count("staff", filter=_Q(staff__is_active=True), distinct=True),
+            _staff=Count("staff_members", filter=_Q(staff_members__is_active=True), distinct=True),
             _classes=Count("classes", filter=_Q(classes__is_active=True), distinct=True),
         ).values("pk", "name", "_students", "_staff", "_classes"):
             school_stats[row["pk"]] = row
@@ -825,7 +854,7 @@ class SuperAdminRequiredMixin(RoleRequiredMixin):
 
 
 STAFF_ROLES = {
-    User.Role.STAFF_ADMIN, User.Role.ACADEMIC_ADMIN, User.Role.PRINCIPAL_DIRECTOR,
+    User.Role.STAFF_ADMIN, User.Role.ACADEMIC_ADMIN, User.Role.MANAGER, User.Role.PRINCIPAL,
     User.Role.DEPUTY_PRINCIPAL, User.Role.FINANCE_ADMIN,
     User.Role.TEACHER, User.Role.EXAM_OFFICER, User.Role.CLASS_TEACHER,
     User.Role.DEPARTMENT_HEAD, User.Role.ACCOUNTANT, User.Role.LIBRARIAN,
@@ -2378,7 +2407,7 @@ class TeacherMarkNotificationReadView(TeacherRequiredMixin, View):
 # =============================================================================
 
 class FinanceRequiredMixin(RoleRequiredMixin):
-    allowed_roles = [User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT]
+    allowed_roles = [User.Role.MANAGER, User.Role.DEPUTY_PRINCIPAL, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT]
     active_nav = None
 
     def get_context_data(self, **kwargs):
@@ -2734,7 +2763,7 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
                 }
             ],
             "can_edit_family_payments": self.request.user.role in {
-                User.Role.PRINCIPAL_DIRECTOR, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
+                User.Role.MANAGER, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
             },
         })
         return context
@@ -2743,9 +2772,9 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
         school = self.get_school(request)
         if request.POST.get("action") == "update_payment":
             if request.user.role not in {
-                User.Role.PRINCIPAL_DIRECTOR, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
+                User.Role.MANAGER, User.Role.FINANCE_ADMIN, User.Role.ACCOUNTANT,
             }:
-                return HttpResponseForbidden("Only the principal/manager or finance officer can edit family payments.")
+                return HttpResponseForbidden("Only the manager or finance officer can edit family payments.")
             guardian = get_object_or_404(
                 Guardian, pk=request.POST.get("guardian_id"), school=school,
             )
@@ -2862,7 +2891,7 @@ class FinanceAdminRefundsView(FinanceRequiredMixin, TemplateView):
 # =============================================================================
 
 class StaffAdminRequiredMixin(RoleRequiredMixin):
-    allowed_roles = [User.Role.PRINCIPAL_DIRECTOR, User.Role.DEPUTY_PRINCIPAL, User.Role.STAFF_ADMIN]
+    allowed_roles = [User.Role.MANAGER, User.Role.PRINCIPAL, User.Role.DEPUTY_PRINCIPAL, User.Role.STAFF_ADMIN]
     active_nav = None
 
     def get_context_data(self, **kwargs):
@@ -2871,8 +2900,15 @@ class StaffAdminRequiredMixin(RoleRequiredMixin):
         return context
 
     def get_school(self, request):
-        from .models import School
-        return School.objects.first()
+        if request.user.is_superuser:
+            return School.objects.first()
+        if getattr(request, "school", None) is not None:
+            return request.school
+        try:
+            return request.user.staff_profile.school
+        except Staff.DoesNotExist:
+            schools = School.objects.filter(is_active=True)
+            return schools.first() if schools.count() == 1 else None
 
 
 class StaffAdminDashboardView(StaffAdminRequiredMixin, TemplateView):
@@ -2881,6 +2917,7 @@ class StaffAdminDashboardView(StaffAdminRequiredMixin, TemplateView):
 
     template_name = "dashboard/staff_admin/overview.html"
     active_nav = "staff_overview"
+    allowed_roles = [User.Role.MANAGER, User.Role.DEPUTY_PRINCIPAL, User.Role.STAFF_ADMIN]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -2919,7 +2956,7 @@ class StaffAdminStaffListView(StaffAdminRequiredMixin, TemplateView):
             "user", "department", "school"
         ).order_by("-created_at") if (school or self.request.user.is_superuser) else Staff.objects.none()
 
-        teacher_mode = self.request.GET.get("teachers") == "1"
+        teacher_mode = self.request.GET.get("teachers") == "1" or self.request.user.role == User.Role.PRINCIPAL
         if teacher_mode:
             staff_qs = staff_qs.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
         search = self.request.GET.get("q", "").strip()
@@ -2957,20 +2994,23 @@ class StaffAdminStaffCreateView(StaffAdminRequiredMixin, View):
         username = request.POST.get("username", "").strip()
         if not username:
             return HttpResponseForbidden("Username is required.")
+        requested_role = request.POST.get("role", User.Role.TEACHER)
+        if request.user.role == User.Role.PRINCIPAL and requested_role not in {User.Role.TEACHER, User.Role.CLASS_TEACHER}:
+            return HttpResponseForbidden("Principals may only enroll teaching staff.")
 
         new_user = User.objects.create_user(
             username=username, password=request.POST.get("password") or get_random_string(16),
             first_name=request.POST.get("first_name", ""),
             last_name=request.POST.get("last_name", ""),
             email=request.POST.get("email", ""),
-            role=request.POST.get("role", User.Role.TEACHER),
+            role=requested_role,
         )
         Staff.objects.create(
             user=new_user, school=school, staff_id=request.POST.get("staff_id", ""),
             department_id=request.POST.get("department_id") or None,
             job_title=request.POST.get("job_title", ""),
             date_hired=request.POST.get("date_hired") or datetime.date.today(),
-            salary=Decimal(request.POST.get("salary") or "0"),
+            salary=Decimal(request.POST.get("salary") or "0") if request.user.role != User.Role.PRINCIPAL else Decimal("0"),
         )
         return redirect("dashboard:staff_admin_staff_list")
 
@@ -2982,10 +3022,16 @@ class StaffAdminStaffDetailView(StaffAdminRequiredMixin, View):
     template_name = "dashboard/staff_admin/staff_detail.html"
     active_nav = "staff"
 
+    def get_staff(self, request, staff_id):
+        queryset = Staff.objects.select_related("user", "school")
+        if not request.user.is_superuser:
+            queryset = queryset.filter(school=self.get_school(request))
+        if request.user.role == User.Role.PRINCIPAL:
+            queryset = queryset.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
+        return get_object_or_404(queryset, pk=staff_id)
+
     def get(self, request, staff_id):
-        school = self.get_school(request)
-        staff = (get_object_or_404(Staff, pk=staff_id)
-                 if request.user.is_superuser else get_object_or_404(Staff, pk=staff_id, school=school))
+        staff = self.get_staff(request, staff_id)
         return render(request, self.template_name, {
             "staff": staff, "active": self.active_nav,
             "qualifications": staff.qualifications.all(),
@@ -2993,9 +3039,7 @@ class StaffAdminStaffDetailView(StaffAdminRequiredMixin, View):
         })
 
     def post(self, request, staff_id):
-        school = self.get_school(request)
-        staff = (get_object_or_404(Staff, pk=staff_id)
-                 if request.user.is_superuser else get_object_or_404(Staff, pk=staff_id, school=school))
+        staff = self.get_staff(request, staff_id)
         action = request.POST.get("action")
 
         if action == "deactivate":
@@ -3014,7 +3058,8 @@ class StaffAdminStaffDetailView(StaffAdminRequiredMixin, View):
             staff.emergency_contact_phone = request.POST.get(
                 "emergency_contact_phone", staff.emergency_contact_phone
             )
-            staff.salary = Decimal(request.POST.get("salary") or staff.salary or "0")
+            if request.user.role != User.Role.PRINCIPAL:
+                staff.salary = Decimal(request.POST.get("salary") or staff.salary or "0")
             staff.save()
         return redirect("dashboard:staff_admin_staff_detail", staff_id=staff.pk)
 
@@ -3024,7 +3069,7 @@ class StaffAdminAttendanceView(StaffAdminRequiredMixin, TemplateView):
     given date."""
 
     template_name = "dashboard/staff_admin/attendance.html"
-    active_nav = "attendance"
+    active_nav = "staff_attendance"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -3032,6 +3077,8 @@ class StaffAdminAttendanceView(StaffAdminRequiredMixin, TemplateView):
         target_date = self.request.GET.get("date") or datetime.date.today().isoformat()
 
         staff_qs = Staff.objects.filter(school=school, is_active=True).select_related("user") if school else Staff.objects.none()
+        if self.request.user.role == User.Role.PRINCIPAL:
+            staff_qs = staff_qs.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
         existing = {
             r.staff_id: r for r in StaffAttendanceRecord.objects.filter(
                 staff__school=school, date=target_date
@@ -3048,7 +3095,10 @@ class StaffAdminAttendanceView(StaffAdminRequiredMixin, TemplateView):
     def post(self, request):
         school = self.get_school(request)
         target_date = request.POST.get("date")
-        for staff in Staff.objects.filter(school=school, is_active=True):
+        staff_qs = Staff.objects.filter(school=school, is_active=True)
+        if request.user.role == User.Role.PRINCIPAL:
+            staff_qs = staff_qs.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
+        for staff in staff_qs:
             status = request.POST.get(f"status_{staff.pk}")
             if not status:
                 continue
@@ -3064,7 +3114,7 @@ class StaffAdminLeaveRequestsView(StaffAdminRequiredMixin, TemplateView):
     step. Approval/rejection reuses services.decide_leave_request(),
     which sends the required notification (Phase 15)."""
 
-    template_name = "dashboard/staff_admin/leave_requests.html"
+    template_name = "dashboard/staff_admin/leave_request.html"
     active_nav = "leave"
 
     def get_context_data(self, **kwargs):
@@ -3073,6 +3123,8 @@ class StaffAdminLeaveRequestsView(StaffAdminRequiredMixin, TemplateView):
         requests_qs = LeaveRequest.objects.filter(
             staff__school=school
         ).select_related("staff__user").order_by("-requested_at") if school else []
+        if self.request.user.role == User.Role.PRINCIPAL and school:
+            requests_qs = requests_qs.filter(staff__user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
         context.update({"school": school, "leave_requests": requests_qs})
         return context
 
@@ -3081,6 +3133,8 @@ class StaffAdminLeaveRequestsView(StaffAdminRequiredMixin, TemplateView):
         leave_request = get_object_or_404(
             LeaveRequest, pk=request.POST.get("leave_request_id"), staff__school=school
         )
+        if request.user.role == User.Role.PRINCIPAL and leave_request.staff.user.role not in {User.Role.TEACHER, User.Role.CLASS_TEACHER}:
+            raise Http404("Leave request not found.")
         approve = request.POST.get("action") == "approve"
         try:
             decide_leave_request(
@@ -3098,6 +3152,7 @@ class StaffAdminWorkloadView(StaffAdminRequiredMixin, TemplateView):
     compute_staff_workload(), no new write path."""
 
     template_name = "dashboard/staff_admin/workload.html"
+    allowed_roles = [User.Role.MANAGER, User.Role.DEPUTY_PRINCIPAL, User.Role.STAFF_ADMIN]
     active_nav = "workload"
 
     def get_context_data(self, **kwargs):
@@ -3170,7 +3225,7 @@ class MyLeaveRequestsView(LoginRequiredMixin, TemplateView):
 class AcademicAdminRequiredMixin(RoleRequiredMixin):
     allowed_roles = [
         User.Role.ACADEMIC_ADMIN,
-        User.Role.PRINCIPAL_DIRECTOR,
+        User.Role.MANAGER, User.Role.PRINCIPAL,
         User.Role.DEPUTY_PRINCIPAL,
     ]
     active_nav = None
@@ -3206,6 +3261,12 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
         classes = Class.objects.filter(school=school, is_active=True).select_related("program") if school else Class.objects.none()
         subjects = Subject.objects.filter(school=school, is_active=True).select_related("department") if school else Subject.objects.none()
         class_subjects = ClassSubject.objects.filter(class_group__school=school, is_active=True).select_related("class_group", "subject") if school else ClassSubject.objects.none()
+        teaching_staff = Staff.objects.filter(
+            school=school, is_active=True,
+            employment_status=Staff.EmploymentStatus.ACTIVE,
+        ).select_related("user") if school else Staff.objects.none()
+        if self.request.user.role == User.Role.PRINCIPAL:
+            teaching_staff = teaching_staff.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
         context.update({
             "school": school,
             "classes": classes,
@@ -3213,9 +3274,9 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
             "subjects": subjects,
             "departments": Department.objects.filter(school=school, is_active=True) if school else [],
             "class_subjects": class_subjects,
-            "teachers": Staff.objects.filter(school=school, is_active=True, employment_status=Staff.EmploymentStatus.ACTIVE).select_related("user") if school else [],
+            "teachers": teaching_staff,
             "students": Student.objects.filter(school=school, is_active=True).select_related("user", "current_class") if school else [],
-            "guardians": Guardian.objects.filter(school=school, is_active=True) if school else [],
+            "guardians": Guardian.objects.filter(school=school, is_active=True) if school and self.request.user.role != User.Role.PRINCIPAL else [],
             "academic_years": AcademicYear.objects.filter(school=school) if school else [],
             "terms": Term.objects.filter(academic_year__school=school) if school else [],
             "assessment_types": AssessmentType.objects.filter(school=school, is_active=True) if school else [],
@@ -3223,7 +3284,7 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
             "grading_schemes": GradingScheme.objects.filter(school=school, is_active=True).prefetch_related("bands") if school else [],
             "report_templates": ReportTemplate.objects.filter(school=school, is_active=True) if school else [],
             "template_keys": ReportTemplate.TemplateKey.choices,
-            "teachers_for_heads": Staff.objects.filter(school=school, is_active=True).select_related("user") if school else [],
+            "teachers_for_heads": teaching_staff,
         })
         edit_type = self.request.GET.get("edit")
         edit_id = self.request.GET.get("id")
@@ -3270,7 +3331,10 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
                 else:
                     return HttpResponseForbidden("Unsupported module edit.")
             elif action == "add_department":
-                head = User.objects.filter(pk=request.POST.get("head_id"), staff_profile__school=school).first() if request.POST.get("head_id") else None
+                head_queryset = User.objects.filter(staff_profile__school=school)
+                if request.user.role == User.Role.PRINCIPAL:
+                    head_queryset = head_queryset.filter(role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
+                head = head_queryset.filter(pk=request.POST.get("head_id")).first() if request.POST.get("head_id") else None
                 Department.objects.create(school=school, head=head, name=request.POST.get("name", "").strip(), code=request.POST.get("code", "").strip())
             elif action == "add_academic_year":
                 AcademicYear.objects.create(school=school, name=request.POST.get("name", "").strip(), start_date=datetime.date.fromisoformat(request.POST.get("start_date")), end_date=datetime.date.fromisoformat(request.POST.get("end_date")), is_current=request.POST.get("is_current") == "on")
@@ -3302,7 +3366,10 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
                     create_assessments_for_structure(structure=structure, created_by=request.user, request=request)
             elif action == "assign_teacher":
                 class_subject = get_object_or_404(ClassSubject, pk=request.POST.get("class_subject_id"), class_group__school=school)
-                teacher = get_object_or_404(Staff, pk=request.POST.get("teacher_id"), school=school, is_active=True)
+                teacher_queryset = Staff.objects.filter(school=school, is_active=True)
+                if request.user.role == User.Role.PRINCIPAL:
+                    teacher_queryset = teacher_queryset.filter(user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
+                teacher = get_object_or_404(teacher_queryset, pk=request.POST.get("teacher_id"))
                 term = get_object_or_404(Term, pk=request.POST.get("term_id"), academic_year__school=school)
                 TeachingAssignment.objects.update_or_create(class_subject=class_subject, term=term, defaults={"teacher": teacher, "is_active": True})
             elif action == "enroll_student":
@@ -3317,6 +3384,8 @@ class PrincipalConfigurationView(AcademicAdminRequiredMixin, TemplateView):
                     student=student, issued_by=request.user, request=request,
                 )
             elif action == "link_guardian":
+                if request.user.role == User.Role.PRINCIPAL:
+                    return HttpResponseForbidden("Principal accounts cannot manage parent or family records.")
                 student = get_object_or_404(Student, pk=request.POST.get("student_id"), school=school)
                 guardian = get_object_or_404(Guardian, pk=request.POST.get("guardian_id"), school=school)
                 StudentGuardian.objects.update_or_create(student=student, guardian=guardian, defaults={"is_primary_contact": request.POST.get("is_primary_contact") == "on", "is_billing_contact": request.POST.get("is_billing_contact") == "on"})
@@ -3378,7 +3447,7 @@ class AcademicAdminDashboardView(AcademicAdminRequiredMixin, TemplateView):
             from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
             from django.db.models.functions import Coalesce
 
-            can_view_finance_chart = self.request.user.role == User.Role.PRINCIPAL_DIRECTOR
+            can_view_finance_chart = self.request.user.role == User.Role.MANAGER
             current_term = Term.objects.filter(
                 academic_year__school=school, academic_year__is_current=True, is_current=True,
             ).first() if can_view_finance_chart else None
@@ -3547,7 +3616,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 transport_period=transport_period,
                 transport_route=transport_route if transport_option != "NONE" else "",
                 takes_coding_robotics=request.POST.get("takes_coding_robotics") == "on",
-                parent_phone=request.POST.get("parent_phone", "").strip(),
+                parent_phone=request.POST.get("parent_phone", "").strip() if request.user.role != User.Role.PRINCIPAL else "",
                 registered_by=request.user, request=request,
             )
         except (ValueError, TypeError) as exc:
@@ -3561,8 +3630,13 @@ class AcademicAdminStudentImportTemplateView(AcademicAdminRequiredMixin, View):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="student_import_template.csv"'
         writer = csv.writer(response)
-        writer.writerow(["username", "first_name", "last_name", "email", "admission_number", "admission_date", "gender", "class_name", "status", "parent_phone", "parent_first_name", "parent_last_name", "parent_relationship"])
-        writer.writerow(["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "F", "Grade 1", "ACTIVE", "+254700000000", "Mary", "Doe", "Mother"])
+        headers = ["username", "first_name", "last_name", "email", "admission_number", "admission_date", "gender", "class_name", "status"]
+        example = ["student-001", "Jane", "Doe", "jane@example.com", "ADM001", "2026-01-06", "F", "Grade 1", "ACTIVE"]
+        if request.user.role != User.Role.PRINCIPAL:
+            headers += ["parent_phone", "parent_first_name", "parent_last_name", "parent_relationship"]
+            example += ["+254700000000", "Mary", "Doe", "Mother"]
+        writer.writerow(headers)
+        writer.writerow(example)
         return response
 
 
@@ -3666,6 +3740,8 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
                         student.status = row["status"]
                         student.save(update_fields=["status", "updated_at"])
                     parent_phone = row.get("parent_phone", "")
+                    if request.user.role == User.Role.PRINCIPAL:
+                        parent_phone = ""
                     if parent_phone:
                         guardian = Guardian.objects.filter(school=school, phone_number=parent_phone).first()
                         if guardian is None:
@@ -3694,6 +3770,7 @@ class AcademicAdminStudentImportView(AcademicAdminRequiredMixin, View):
 
 
 class PrincipalParentsView(AcademicAdminRequiredMixin, View):
+    allowed_roles = [User.Role.MANAGER, User.Role.DEPUTY_PRINCIPAL]
     template_name = "dashboard/academic_admin/parents.html"
     active_nav = "parents"
 
@@ -3724,6 +3801,8 @@ class PrincipalTimetableView(AcademicAdminRequiredMixin, View):
         assignments = TeachingAssignment.objects.filter(
             class_subject__class_group__school=school, is_active=True
         ).select_related("teacher__user", "class_subject__class_group", "class_subject__subject", "term") if school else TeachingAssignment.objects.none()
+        if request.user.role == User.Role.PRINCIPAL:
+            assignments = assignments.filter(teacher__user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER])
         slots = TimetableSlot.objects.filter(
             term__academic_year__school=school
         ).select_related("period", "class_group", "teacher__user", "teaching_assignment__class_subject__subject", "term") if school else TimetableSlot.objects.none()
@@ -3771,10 +3850,14 @@ class PrincipalTimetableView(AcademicAdminRequiredMixin, View):
                         )
                         breaks += 1; order += 1; cursor = break_end
             elif action == "add_slot":
-                assignment = get_object_or_404(
-                    TeachingAssignment, pk=request.POST.get("assignment_id"),
+                assignment_queryset = TeachingAssignment.objects.filter(
                     class_subject__class_group__school=school, is_active=True,
                 )
+                if request.user.role == User.Role.PRINCIPAL:
+                    assignment_queryset = assignment_queryset.filter(
+                        teacher__user__role__in=[User.Role.TEACHER, User.Role.CLASS_TEACHER],
+                    )
+                assignment = get_object_or_404(assignment_queryset, pk=request.POST.get("assignment_id"))
                 period = get_object_or_404(Period, pk=request.POST.get("period_id"), school=school, is_break=False)
                 room = Room.objects.filter(pk=request.POST.get("room_id"), school=school).first() if request.POST.get("room_id") else None
                 TimetableSlot.objects.create(

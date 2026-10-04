@@ -36,7 +36,8 @@ from .validators import (
 class User(AbstractUser):
     class Role(models.TextChoices):
         SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
-        PRINCIPAL_DIRECTOR = "PRINCIPAL_DIRECTOR", "Principal/Manager"
+        MANAGER = "MANAGER", "Manager"
+        PRINCIPAL = "PRINCIPAL", "Principal"
         DEPUTY_PRINCIPAL = "DEPUTY_PRINCIPAL", "Deputy Principal"
         STAFF_ADMIN = "STAFF_ADMIN", "Staff Admin"
         ACADEMIC_ADMIN = "ACADEMIC_ADMIN", "Academic Admin"
@@ -562,7 +563,7 @@ class Staff(models.Model):
         "smsApp.User", on_delete=models.CASCADE, related_name="staff_profile",
         limit_choices_to={
             "role__in": [
-                "STAFF_ADMIN", "ACADEMIC_ADMIN", "FINANCE_ADMIN", "TEACHER",
+                "STAFF_ADMIN", "ACADEMIC_ADMIN", "FINANCE_ADMIN", "MANAGER", "PRINCIPAL", "TEACHER",
                 "EXAM_OFFICER", "CLASS_TEACHER", "DEPARTMENT_HEAD",
                 "ACCOUNTANT", "LIBRARIAN",
             ]

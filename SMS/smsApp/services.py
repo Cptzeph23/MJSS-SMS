@@ -92,7 +92,8 @@ def get_dashboard_url_for_role(user: User) -> str:
 
     mapping = {
         User.Role.SUPER_ADMIN: "dashboard:super_admin",
-        User.Role.PRINCIPAL_DIRECTOR: "dashboard:academic_admin_dashboard",
+        User.Role.MANAGER: "dashboard:academic_admin_dashboard",
+        User.Role.PRINCIPAL: "dashboard:academic_admin_dashboard",
         User.Role.DEPUTY_PRINCIPAL: "dashboard:academic_admin_dashboard",
         User.Role.STUDENT: "dashboard:student_dashboard",
         User.Role.PARENT: "dashboard:student_dashboard",
