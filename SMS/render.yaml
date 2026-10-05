@@ -15,7 +15,7 @@ services:
     plan: starter
     branch: main
     buildCommand: "bash deploy/build.sh"
-    startCommand: "gunicorn SMS.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
+    startCommand: "DJANGO_SETTINGS_MODULE=SMS.settings.prod gunicorn SMS.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: SMS.settings.prod
