@@ -3,6 +3,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.db.models import Case, DecimalField, F, Sum, When
 from django.utils.html import format_html
+from django.urls import reverse
+from urllib.parse import urlencode
 
 from .models import (
     AcademicYear,
@@ -108,7 +110,7 @@ class SchoolAdmin(admin.ModelAdmin):
             return "No logo uploaded yet. Choose a file in the School logo field above."
         return format_html(
             '<img src="{}" alt="{}" style="max-width:180px;max-height:100px;object-fit:contain">',
-            obj.logo.url,
+            f"{reverse('dashboard:school_logo', kwargs={'school_id': obj.pk})}?{urlencode({'v': obj.logo.name})}",
             f"{obj.name} logo",
         )
 

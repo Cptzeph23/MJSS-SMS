@@ -18,6 +18,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 from django.views.generic import RedirectView, TemplateView
+from botocore.exceptions import ClientError
 
 from .validators import (
     COURSE_MATERIAL_TYPE_TO_CATEGORY,
@@ -148,6 +149,35 @@ from .services import (
     transition_assessment_workflow,
     verify_transcript,
 )
+
+
+class SchoolLogoView(View):
+    """Serve only a school's public logo via its configured durable storage."""
+
+    def get(self, request, school_id):
+        school = get_object_or_404(School, pk=school_id)
+        if not school.logo:
+            raise Http404("School logo not found.")
+        try:
+            logo_file = school.logo.open("rb")
+        except (FileNotFoundError, OSError):
+            raise Http404("School logo not found.")
+        except ClientError as exc:
+            # S3-compatible storage reports missing objects as ClientError,
+            # while configuration/network failures should remain visible.
+            if exc.response.get("Error", {}).get("Code") in {
+                "NoSuchKey", "404", "NotFound",
+            }:
+                raise Http404("School logo not found.") from exc
+            raise
+        import mimetypes
+        response = FileResponse(
+            logo_file,
+            content_type=mimetypes.guess_type(school.logo.name)[0] or "application/octet-stream",
+        )
+        response["Cache-Control"] = "public, max-age=31536000, immutable"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class LoginView(DjangoLoginView):
@@ -2783,14 +2813,16 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
             guardian_qs = Guardian.objects.filter(
                 school=school, is_active=True
             ).order_by("last_name", "first_name")
-            paginator = Paginator(guardian_qs, 15)
+            # Family histories are intentionally paged in small chunks: each
+            # family can have many invoices and years of payment allocations.
+            paginator = Paginator(guardian_qs, 8)
             page_number = self.request.GET.get("page")
             page_obj = paginator.get_page(page_number)
             for guardian in page_obj:
-                children = Student.objects.filter(
+                children = list(Student.objects.filter(
                     school=school, studentguardian__guardian=guardian
-                ).distinct().select_related("user")
-                summary = compute_family_account_summary(guardian=guardian)
+                ).distinct().select_related("user", "current_class"))
+                summary = compute_family_account_summary(guardian=guardian, children=children)
                 invoices = Invoice.objects.filter(
                     school=school, student__in=children
                 ).exclude(status=Invoice.Status.CANCELLED).select_related(
@@ -2803,14 +2835,21 @@ class FinanceAdminFamilyPaymentView(FinanceRequiredMixin, TemplateView):
                     "allocations__invoice__student__user", "refunds",
                 ).order_by("-payment_date"))
                 for payment in family_payments:
-                    allocations_by_invoice = {
-                        allocation.invoice_id: allocation.amount
-                        for allocation in payment.allocations.all()
-                    }
-                    payment.edit_allocation_rows = [{
-                        "invoice": invoice,
-                        "amount": allocations_by_invoice.get(invoice.pk, ""),
-                    } for invoice in invoice_list]
+                    payment.edit_allocation_rows = []
+                    if (payment.status == Payment.Status.COMPLETED
+                            and not payment.refunds.all()
+                            and self.request.user.role in {
+                                User.Role.MANAGER, User.Role.FINANCE_ADMIN,
+                                User.Role.ACCOUNTANT,
+                            }):
+                        allocations_by_invoice = {
+                            allocation.invoice_id: allocation.amount
+                            for allocation in payment.allocations.all()
+                        }
+                        payment.edit_allocation_rows = [{
+                            "invoice": invoice,
+                            "amount": allocations_by_invoice.get(invoice.pk, ""),
+                        } for invoice in invoice_list]
                 families.append({
                     "guardian": guardian,
                     "children": children,

@@ -34,7 +34,7 @@
 <section class="card sms-stat-card p-4 mb-4" aria-labelledby="school-heading-{{ school.pk }}">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 id="school-heading-{{ school.pk }}" class="mb-0">{{ school.name }}</h5>
-        {% if school.logo %}<img src="{{ school.logo.url }}" alt="{{ school.name }} logo" style="max-height:64px;max-width:160px;object-fit:contain">{% endif %}
+        {% if school.logo %}<img src="{% url 'dashboard:school_logo' school.pk %}?v={{ school.logo.name|urlencode }}" alt="{{ school.name }} logo" style="max-height:64px;max-width:160px;object-fit:contain">{% endif %}
     </div>
     <form method="post" enctype="multipart/form-data" class="row g-3">
         {% csrf_token %}

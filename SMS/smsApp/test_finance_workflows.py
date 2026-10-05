@@ -1,8 +1,13 @@
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from django.core.files.base import ContentFile
+from django.test import override_settings
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
 from django.urls import reverse
 
 from .models import (
@@ -73,6 +78,14 @@ class FinanceWorkflowTests(TestCase):
             structure.invoices.first().total_amount, Decimal("15000")
         )
 
+    def test_school_logo_endpoint_serves_durable_file_with_long_cache(self):
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.school.logo.save("badge.png", ContentFile(b"school-logo-test"), save=True)
+            response = self.client.get(reverse("dashboard:school_logo", args=[self.school.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("max-age=31536000", response["Cache-Control"])
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+
     def test_family_payment_page_is_utf8_and_lists_registered_family(self):
         guardian = Guardian.objects.create(
             school=self.school, first_name="Jose", last_name="Nunez",
@@ -94,3 +107,24 @@ class FinanceWorkflowTests(TestCase):
         self.assertContains(response, "Nunez")
         self.assertNotContains(response, "UnicodeDecodeError")
         Path("templates/dashboard/finance/family_payment.html").read_text(encoding="utf-8")
+
+    def test_family_payment_page_query_count_stays_bounded_for_one_family(self):
+        guardian = Guardian.objects.create(
+            school=self.school, first_name="Query", last_name="Check",
+            relationship="Parent", phone_number="+254700000099",
+        )
+        for number in range(2):
+            user = User.objects.create_user(
+                username=f"querychild{number}", password="pass12345", role=User.Role.STUDENT,
+            )
+            student = Student.objects.create(
+                user=user, school=self.school, current_class=self.class_group,
+                admission_number=f"Q-{number}", admission_date=date(2026, 1, 10),
+            )
+            StudentGuardian.objects.create(student=student, guardian=guardian)
+
+        self.client.login(username="financeworkflow", password="pass12345")
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse("dashboard:finance_family_payment"))
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(queries), 50)

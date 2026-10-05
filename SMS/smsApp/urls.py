@@ -6,6 +6,7 @@ from . import views
 app_name = "dashboard"
 
 urlpatterns = [
+    path("branding/school/<int:school_id>/logo/", views.SchoolLogoView.as_view(), name="school_logo"),
     path("search/", views.GlobalSearchView.as_view(), name="global_search"),
     path("login/", views.LoginView.as_view(), name="login"),
     path("logout/", views.LogoutView.as_view(), name="logout"),

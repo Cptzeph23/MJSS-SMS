@@ -2193,12 +2193,33 @@ def update_family_payment(
     return payment
 
 
-def compute_family_account_summary(*, guardian) -> dict[str, Any]:
+def compute_family_account_summary(*, guardian, children=None) -> dict[str, Any]:
     """Return direct fee-structure totals and payment totals per child."""
-    children = Student.objects.filter(studentguardian__guardian=guardian).select_related("user", "current_class").distinct()
+    if children is None:
+        children = Student.objects.filter(
+            studentguardian__guardian=guardian,
+        ).select_related("user", "current_class").distinct()
     rows, total_billed, total_paid = [], Decimal("0"), Decimal("0")
     for child in children:
-        account = compute_student_account_summary(student=child)
+        # Newly enrolled children without invoices have no historical ledger
+        # to replay. Avoid constructing the full multi-year history just to
+        # report their current structure charge and zero payment/balance.
+        has_invoices = child.invoices.exclude(status="CANCELLED").exists()
+        if not has_invoices:
+            structure = compute_student_fee_structure_summary(student=child)
+            current_charge = structure["total"]
+            account = {
+                "total_billed": current_charge,
+                "total_paid": Decimal("0"),
+                "outstanding_balance": -current_charge,
+                "outstanding_balance_display": f"{-current_charge:+,.2f}",
+                "fee_structure": structure.get("structure"),
+                "billed_from_fee_structure": bool(
+                    structure.get("structure") or structure.get("structures")
+                ),
+            }
+        else:
+            account = compute_student_account_summary(student=child)
         billed, paid = account["total_billed"], account["total_paid"]
         total_billed += billed
         total_paid += paid
