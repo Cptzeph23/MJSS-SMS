@@ -1,10 +1,12 @@
 # Absolute path: SMS/smsApp/tests.py
 import datetime
+from io import BytesIO
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -3907,6 +3909,35 @@ class AcademicAdminDashboardTests(TestCase):
     def test_students_list_shows_registered_student(self):
         response = self.client.get(reverse("dashboard:academic_admin_students"))
         self.assertContains(response, "ADM950")
+
+    def test_student_list_filters_by_class_and_page_size(self):
+        response = self.client.get(reverse("dashboard:academic_admin_students"), {
+            "class_id": self.class_group.pk, "page_size": 50,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_size"], 50)
+        self.assertEqual(response.context["selected_class_id"], str(self.class_group.pk))
+        self.assertContains(response, "Grade 10")
+
+    def test_student_registration_accepts_and_displays_passport_photo(self):
+        from PIL import Image
+
+        image_buffer = BytesIO()
+        Image.new("RGB", (2, 2), color="navy").save(image_buffer, format="PNG")
+        response = self.client.post(
+            reverse("dashboard:academic_admin_students"),
+            {
+                "username": "studentwithphoto", "first_name": "Photo", "last_name": "Student",
+                "admission_number": "ADM952", "admission_date": "2026-01-10",
+                "gender": Student.Gender.FEMALE, "current_class_id": self.class_group.pk,
+                "photo": SimpleUploadedFile("passport.png", image_buffer.getvalue(), content_type="image/png"),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        student = Student.objects.get(admission_number="ADM952")
+        self.assertTrue(student.photo.name.startswith("students/photos/"))
+        list_response = self.client.get(reverse("dashboard:academic_admin_students"))
+        self.assertContains(list_response, "passport photo")
 
     def test_register_student_via_dashboard(self):
         response = self.client.post(

@@ -12,7 +12,7 @@
 
 {% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4">
     <div class="text-muted small mb-2">Register Student</div>
-    <form method="post" class="row g-2">
+    <form method="post" enctype="multipart/form-data" class="row g-2">
         {% csrf_token %}
         <div class="col-md-2"><input type="text" name="username" class="form-control" placeholder="Username" required></div>
         <div class="col-md-2"><input type="text" name="first_name" class="form-control" placeholder="First name"></div>
@@ -21,6 +21,7 @@
         <div class="col-12"><span class="form-label d-block mb-1">Gender <span class="text-danger">*</span></span>{% for value,label in gender_choices %}<label class="form-check form-check-inline"><input class="form-check-input" type="radio" name="gender" value="{{ value }}" required><span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
         <div class="col-md-2"><input type="text" name="admission_number" class="form-control" placeholder="Admission #" required></div>
         <div class="col-md-2"><input type="date" name="admission_date" class="form-control" required></div>
+        <div class="col-md-3"><label class="form-label small mb-1" for="student-photo">Passport photo</label><input id="student-photo" type="file" name="photo" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif"></div>
         <div class="col-md-3">
             <select name="current_class_id" class="form-select">
                 <option value="">Class</option>
@@ -39,32 +40,36 @@
 
 {% if request.user.role != "DEPUTY_PRINCIPAL" %}<div class="card sms-stat-card p-3 mb-4"><div class="text-muted small mb-2">Import existing students</div><p class="small text-muted mb-2">Upload an XLSX, CSV, or text-based PDF. Required columns: <code>username</code>, <code>admission_number</code>, <code>admission_date</code> (YYYY-MM-DD), <code>gender</code> (<code>F</code>, <code>M</code>, or <code>O</code>), and <code>class_name</code>. Optional family columns: <code>parent_phone</code>, <code>parent_first_name</code>, <code>parent_last_name</code>, and <code>parent_relationship</code>.</p><form method="post" action="{% url 'dashboard:academic_admin_student_import' %}" enctype="multipart/form-data" class="row g-2 align-items-center">{% csrf_token %}<div class="col-md-7"><input type="file" name="student_file" class="form-control" accept=".xlsx,.csv,.pdf" required></div><div class="col-md-3"><button class="btn btn-outline-primary w-100">Import students</button></div><div class="col-md-2"><a class="btn btn-outline-secondary w-100" href="{% url 'dashboard:academic_admin_student_import_template' %}">Download template</a></div></form></div>{% endif %}
 
-<form method="get" class="mb-3">
-    <input type="text" name="q" class="form-control" style="max-width: 300px;" placeholder="Search admission # or name" value="{{ search }}">
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3" aria-label="Filter students by class">
+    <a class="btn btn-sm {% if not selected_class_id %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?{% if search %}q={{ search|urlencode }}&amp;{% endif %}page_size={{ page_size }}">All grades</a>
+    {% for class_group in classes %}
+        <a class="btn btn-sm {% if selected_class_id == class_group.pk|stringformat:'s' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?class_id={{ class_group.pk }}{% if search %}&amp;q={{ search|urlencode }}{% endif %}&amp;page_size={{ page_size }}">{{ class_group.name }}</a>
+    {% endfor %}
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    {% if selected_class_id %}<input type="hidden" name="class_id" value="{{ selected_class_id }}">{% endif %}
+    <div class="col-md-5"><label class="form-label" for="student-search">Search</label><input id="student-search" type="text" name="q" class="form-control" placeholder="Admission number or student name" value="{{ search }}"></div>
+    <div class="col-auto"><label class="form-label" for="page-size">Rows per page</label><select id="page-size" name="page_size" class="form-select" onchange="this.form.submit()"><option value="25" {% if page_size == 25 %}selected{% endif %}>25</option><option value="50" {% if page_size == 50 %}selected{% endif %}>50</option><option value="200" {% if page_size == 200 %}selected{% endif %}>200</option></select></div>
+    <div class="col-auto"><button class="btn btn-outline-primary">Search</button></div>
 </form>
 
-<div class="card sms-stat-card p-3">
-    <table class="table table-hover align-middle mb-0">
-        <thead>
-            <tr><th>Admission #</th><th>Name</th><th>Gender</th><th>Class</th><th>Stream</th><th>Status</th><th></th></tr>
-        </thead>
-        <tbody>
-        {% for s in students %}
+{% for group in student_groups %}
+<section class="card sms-stat-card p-3 mb-3">
+    <h5 class="mb-3">{{ group.class_name }} <span class="badge bg-secondary">{{ group.students|length }}</span></h5>
+    <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Photo</th><th>Admission #</th><th>Name</th><th>Gender</th><th>Stream</th><th>Status</th><th></th></tr></thead>
+        <tbody>{% for s in group.students %}
             <tr>
-                <td>{{ s.admission_number }}</td>
-                <td>{{ s.user.get_full_name|default:s.user.username }}</td>
-                <td>{{ s.get_gender_display|default:"Not recorded" }}</td>
-                <td>{{ s.current_class|default:"—" }}</td>
-                <td>{{ s.current_stream|default:"—" }}</td>
+                <td>{% if s.photo %}<img src="{{ s.photo.url }}" alt="{{ s.user.get_full_name|default:s.user.username }} passport photo" loading="lazy" class="rounded-circle" style="width:48px;height:48px;object-fit:cover">{% else %}<span class="rounded-circle bg-body-secondary d-inline-flex align-items-center justify-content-center" style="width:48px;height:48px" aria-label="No photo"><i class="bi bi-person"></i></span>{% endif %}</td>
+                <td>{{ s.admission_number }}</td><td>{{ s.user.get_full_name|default:s.user.username }}</td>
+                <td>{{ s.get_gender_display|default:"Not recorded" }}</td><td>{{ s.current_stream|default:"—" }}</td>
                 <td><span class="badge bg-secondary">{{ s.get_status_display }}</span></td>
-                <td class="text-end">
-                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:academic_admin_student_detail' s.pk %}">View</a>
-                </td>
+                <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'dashboard:academic_admin_student_detail' s.pk %}">View</a></td>
             </tr>
-        {% empty %}
-            <tr><td colspan="7" class="text-muted">No students found.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</div>
+        {% endfor %}</tbody>
+    </table></div>
+</section>
+{% empty %}<div class="card sms-stat-card p-3 text-muted">No students found for this grade/filter.</div>{% endfor %}
+{% include "includes/_pagination.html" %}
 {% endblock %}

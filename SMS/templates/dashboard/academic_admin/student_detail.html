@@ -15,6 +15,13 @@
     &middot; <span class="badge bg-secondary">{{ student.get_status_display }}</span>
 </p>
 
+<div class="card sms-stat-card p-3 mb-4">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+        {% if student.photo %}<img src="{{ student.photo.url }}" alt="{{ student.user.get_full_name|default:student.user.username }} passport photo" class="rounded" style="width:112px;height:132px;object-fit:cover">{% else %}<div class="rounded bg-body-secondary d-flex align-items-center justify-content-center" style="width:112px;height:132px"><i class="bi bi-person fs-1 text-muted"></i></div>{% endif %}
+        <div><h5 class="mb-1">Passport photo</h5>{% if request.user.role != "DEPUTY_PRINCIPAL" %}<form method="post" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap align-items-center">{% csrf_token %}<input type="hidden" name="action" value="update_photo"><input type="file" name="photo" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif" required style="max-width:320px"><button class="btn btn-outline-primary">{% if student.photo %}Replace photo{% else %}Upload photo{% endif %}</button></form>{% endif %}</div>
+    </div>
+</div>
+
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card sms-stat-card p-3">

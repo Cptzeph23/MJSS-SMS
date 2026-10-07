@@ -984,7 +984,7 @@ class SuperAdminUsersView(SuperAdminRequiredMixin, TemplateView):
         users = User.objects.all().order_by("-created_at")
         search = self.request.GET.get("q", "").strip()
         if search:
-            from django.db.models import Count, Q
+            from django.db.models import Q
             users = users.filter(Q(username__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(email__icontains=search))
         from django.core.paginator import Paginator
         paginator = Paginator(users, 25)
@@ -3670,7 +3670,13 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
         school = self.get_school(self.request)
         students_qs = Student.objects.filter(school=school).select_related(
             "user", "current_class", "current_stream"
-        ).order_by("-created_at") if school else Student.objects.none()
+        ).order_by("current_class__name", "user__last_name", "user__first_name", "admission_number") if school else Student.objects.none()
+
+        class_id = self.request.GET.get("class_id", "").strip()
+        if class_id.isdigit():
+            students_qs = students_qs.filter(current_class_id=class_id)
+        else:
+            class_id = ""
 
         search = self.request.GET.get("q", "").strip()
         if search:
@@ -3681,11 +3687,20 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
             )
 
         from django.core.paginator import Paginator
-        paginator = Paginator(students_qs, 25)
+        page_size_raw = self.request.GET.get("page_size", "25")
+        page_size = int(page_size_raw) if page_size_raw in {"25", "50", "200"} else 25
+        paginator = Paginator(students_qs, page_size)
         page_obj = paginator.get_page(self.request.GET.get("page"))
+        grouped = {}
+        for student in page_obj.object_list:
+            label = student.current_class.name if student.current_class_id else "No class assigned"
+            grouped.setdefault(label, []).append(student)
+        student_groups = [{"class_name": label, "students": rows} for label, rows in grouped.items()]
         context.update({
-            "school": school, "students": page_obj, "page_obj": page_obj, "search": search,
-            "classes": Class.objects.filter(school=school, is_active=True) if school else [],
+            "school": school, "students": page_obj, "student_groups": student_groups,
+            "page_obj": page_obj, "search": search, "page_size": page_size,
+            "selected_class_id": class_id,
+            "classes": Class.objects.filter(school=school, is_active=True).order_by("name") if school else [],
             "transport_routes": FeeStructureTransport.objects.filter(
                 structure__school=school, structure__academic_year__is_current=True,
                 structure__is_active=True,
@@ -3734,6 +3749,9 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 admission_number=request.POST.get("admission_number", ""),
                 admission_date=request.POST.get("admission_date"),
                 gender=gender,
+                photo=validate_upload(
+                    request.FILES.get("photo"), validate_image_content, 5,
+                ),
                 current_class=(
                     Class.objects.filter(pk=request.POST.get("current_class_id"), school=school).first()
                     if request.POST.get("current_class_id") else None
@@ -3745,7 +3763,7 @@ class AcademicAdminStudentsView(AcademicAdminRequiredMixin, TemplateView):
                 parent_phone=request.POST.get("parent_phone", "").strip() if request.user.role != User.Role.PRINCIPAL else "",
                 registered_by=request.user, request=request,
             )
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, ValidationError) as exc:
             return HttpResponseForbidden(str(exc))
         if not request.POST.get("password"):
             messages.success(request, f"Temporary sign-in password for {request.POST.get('username', '').strip()}: {temporary_password}")
@@ -4043,6 +4061,23 @@ class AcademicAdminStudentDetailView(AcademicAdminRequiredMixin, View):
             return HttpResponseForbidden("Deputy Principals cannot change student status.")
         school = self.get_school(request)
         student = get_object_or_404(Student, pk=student_id, school=school)
+        if request.POST.get("action") == "update_photo":
+            try:
+                photo = validate_upload(
+                    request.FILES.get("photo"), validate_image_content, 5,
+                )
+            except ValidationError as exc:
+                return HttpResponseForbidden(str(exc))
+            if photo is None:
+                return HttpResponseForbidden("Choose a passport photo to upload.")
+            student.photo = photo
+            student.save(update_fields=["photo", "updated_at"])
+            log_audit(
+                actor=request.user, action=AuditLog.Action.UPDATE, request=request,
+                target_model="Student", target_object_id=student.pk,
+                description=f"Updated passport photo for {student}",
+            )
+            return redirect("dashboard:academic_admin_student_detail", student_id=student.pk)
         if request.POST.get("action") == "update_gender":
             gender = request.POST.get("gender", "")
             if gender not in Student.Gender.values:
