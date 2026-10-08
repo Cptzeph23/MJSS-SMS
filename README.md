@@ -135,13 +135,24 @@ For production, use a domain controlled by the school operator, configure a wild
 
 ## Tests and checks
 
+Install the test runner and Django integration plugin once in the active virtual environment:
+
+```bash
+python -m pip install pytest pytest-django
+```
+
+`SMS/pytest.ini` selects isolated test settings: in-memory SQLite, local-memory cache, and temporary local media storage. It will not use your `.env` database, Redis, or Supabase storage credentials.
+
 ```bash
 cd SMS
 python manage.py check
 python manage.py test
+pytest
 ```
 
-The test runner creates a test database. Confirm the development environment is using a disposable local database before running tests; never run tests against production data. To force a temporary SQLite database for an audit/test run:
+`manage.py test` uses the settings module selected by `manage.py` (development by default), so confirm it is using a disposable database before running it. The `pytest` command uses the isolated settings above.
+
+To force a temporary SQLite database for a Django test-runner audit:
 
 ```bash
 REDIS_URL= DATABASE_URL=sqlite:////tmp/sms-test.sqlite3 python manage.py test
