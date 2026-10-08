@@ -71,12 +71,13 @@ class FamilyFinanceTests(TestCase):
         summary = compute_family_account_summary(guardian=self.guardian)
         self.assertEqual(summary["total_billed"], Decimal("90000"))
         self.assertEqual(summary["total_paid"], Decimal("50000"))
-        self.assertEqual(summary["outstanding_balance"], Decimal("40000"))
+        # Positive is a family credit; a balance still owed is negative.
+        self.assertEqual(summary["outstanding_balance"], Decimal("-40000"))
         self.assertEqual(payment.allocations.count(), 2)
         balances = {row["student"].admission_number: row["outstanding_balance"] for row in summary["children"]}
         self.assertEqual(balances["FAM-1"], Decimal("0"))
-        self.assertEqual(balances["FAM-2"], Decimal("5000"))
-        self.assertEqual(balances["FAM-3"], Decimal("35000"))
+        self.assertEqual(balances["FAM-2"], Decimal("-5000"))
+        self.assertEqual(balances["FAM-3"], Decimal("-35000"))
         self.assertTrue(hasattr(payment, "receipt"))
 
     def test_family_payment_rejects_unrelated_invoice(self):

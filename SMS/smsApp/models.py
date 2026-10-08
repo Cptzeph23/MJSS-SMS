@@ -1856,8 +1856,12 @@ class QuizAttempt(models.Model):
     def total_score(self):
         if self.auto_score is None and self.manual_score is None:
             return None
-        scores = [score for score in (self.auto_score, self.manual_score) if score is not None]
-        return (sum(scores, Decimal("0")) / Decimal(len(scores))).quantize(Decimal("0.01"))
+        # Scores are raw marks from disjoint questions; combine them rather
+        # than averaging the auto- and manually-graded sections.
+        return sum(
+            (score for score in (self.auto_score, self.manual_score) if score is not None),
+            Decimal("0"),
+        ).quantize(Decimal("0.01"))
 
 
 class QuizAnswer(models.Model):

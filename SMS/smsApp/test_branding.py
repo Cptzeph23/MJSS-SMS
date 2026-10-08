@@ -21,10 +21,10 @@ class BrandingTemplateTests(SimpleTestCase):
 
     def test_sidebar_uses_school_logo_with_icon_fallback(self):
         base = Path("templates/base.html").read_text()
-        self.assertIn("dashboard_school.logo.url", base)
+        self.assertIn("dashboard:school_logo", base)
         self.assertIn("dashboard_school.short_name", base)
         self.assertIn("bi-mortarboard-fill", base)
-        self.assertIn("rel=\"icon\" href=\"{{ dashboard_school.logo.url }}\"", base)
+        self.assertIn("dashboard_school.logo.name|urlencode", base)
 
     def test_school_logo_upload_is_available_in_both_school_admin_forms(self):
         config = Path("templates/dashboard/super_admin/school_config.html").read_text()
@@ -38,8 +38,8 @@ class BrandingTemplateTests(SimpleTestCase):
 
     def test_login_is_school_branded(self):
         login = Path("templates/registration/login.html").read_text()
-        self.assertIn("login_school.logo.url", login)
-        self.assertIn("rel=\"icon\" href=\"{{ login_school.logo.url }}\"", login)
+        self.assertIn("dashboard:school_logo", login)
+        self.assertIn("login_school.logo.name|urlencode", login)
         self.assertIn("--maroon-900", login)
         self.assertIn("Welcome back", login)
 

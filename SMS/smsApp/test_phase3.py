@@ -91,7 +91,9 @@ class AttendanceSMSPhase3Tests(TestCase):
         sms_deliveries = NotificationDelivery.objects.filter(
             channel=NotificationDelivery.Channel.SMS
         )
-        self.assertEqual(sms_deliveries.count(), 3)
+        # Notify guardians for all four attendance states, including present
+        # and excused, as requested by the attendance SMS workflow.
+        self.assertEqual(sms_deliveries.count(), 4)
         self.assertTrue(all(d.status == NotificationDelivery.Status.FAILED for d in sms_deliveries))
         self.assertTrue(all("not configured" in d.error_message for d in sms_deliveries))
 

@@ -132,12 +132,12 @@ def get_dashboard_url_for_role(user: User) -> str:
 
 def correct_attendance_record(
     *,
-    record: "AttendanceRecord",
+    record: AttendanceRecord,
     new_status: str,
     corrected_by: User,
     request: HttpRequest | None = None,
     new_notes: str | None = None,
-) -> "AttendanceRecord":
+) -> AttendanceRecord:
     """Spec §11: 'Academic Admin can... correct attendance with appropriate
     permissions'. This is the single write path for corrections — callers
     (views, Phase 7+) must not set `record.status = ...; record.save()`
@@ -175,7 +175,7 @@ def correct_attendance_record(
 # grade boundary or a weighting percentage.
 # =============================================================================
 
-def get_grade_for_mark(scheme, mark) -> "GradeBand | None":
+def get_grade_for_mark(scheme, mark) -> GradeBand | None:
     """Spec §13: resolve a numeric mark to a GradeBand under the given
     scheme. Returns None if no band covers the mark (a configuration gap
     the caller/UI should surface, not silently default from)."""
@@ -458,12 +458,12 @@ def reject_assessment(
 
 def request_result_amendment(
     *,
-    assessment_mark: "AssessmentMark",
+    assessment_mark: AssessmentMark,
     reason: str,
     proposed_mark,
     requested_by: User,
     request: HttpRequest | None = None,
-) -> "ResultAmendmentRequest":
+) -> ResultAmendmentRequest:
     """Spec §14: the only way to change a mark once its Assessment has
     been PUBLISHED. Captures original_mark as a snapshot so the audit
     trail is accurate even if the mark changes again before this is
@@ -492,12 +492,12 @@ def request_result_amendment(
 
 def decide_result_amendment(
     *,
-    amendment: "ResultAmendmentRequest",
+    amendment: ResultAmendmentRequest,
     approve: bool,
     reviewed_by: User,
     comment: str = "",
     request: HttpRequest | None = None,
-) -> "ResultAmendmentRequest":
+) -> ResultAmendmentRequest:
     """Applies or rejects a pending amendment. Approving is the *only*
     code path permitted to mutate marks.marks_obtained on a mark whose
     Assessment is already PUBLISHED (spec §14 'prevent unrestricted
@@ -760,7 +760,7 @@ def build_parent_academic_history(*, student: Student) -> list[dict[str, Any]]:
     return history
 
 
-def render_report_html(*, report_card: "ReportCard") -> str:
+def render_report_html(*, report_card: ReportCard) -> str:
     """Renders report_card's configured template with freshly assembled
     data. Template choice and which sections to show come entirely from
     ReportTemplate (spec §15 'Allow report templates to be configurable.
@@ -825,8 +825,8 @@ def _school_logo_data_uri(school) -> str | None:
 
 
 def generate_report_pdf(
-    *, report_card: "ReportCard", generated_by: User, request: HttpRequest | None = None
-) -> "ReportCard":
+    *, report_card: ReportCard, generated_by: User, request: HttpRequest | None = None
+) -> ReportCard:
     """Spec §15 'PDF report' / 'Downloadable report'. Renders via
     render_report_html() then converts with WeasyPrint (HTML/CSS -> PDF),
     so the PDF and the on-screen HTML report always come from the exact
@@ -860,10 +860,10 @@ def generate_batch_reports(
     *,
     class_group,
     term: "Term",
-    template: "ReportTemplate",
+    template: ReportTemplate,
     generated_by: User,
     request: HttpRequest | None = None,
-) -> list["ReportCard"]:
+) -> list[ReportCard]:
     """Spec §15 'Batch reports'. Creates/updates one ReportCard per active
     student in the class and generates each PDF. Returns the list so the
     calling view can present a summary/zip download."""
@@ -887,7 +887,7 @@ def generate_batch_reports(
 
 def generate_transcript(
     *, student: "Student", generated_by: User, request: HttpRequest | None = None
-) -> "Transcript":
+) -> Transcript:
     """Builds a full cumulative transcript from every PUBLISHED assessment
     across every term/class_subject the student has been enrolled in,
     snapshots it into TranscriptEntry rows, computes GPA/CGPA, renders the
@@ -1122,7 +1122,7 @@ def verify_transcript(verification_code) -> dict[str, Any]:
 
 def submit_assignment(
     *,
-    assignment: "Assignment",
+    assignment: Assignment,
     student: Student,
     submitted_file=None,
     submitted_text: str = "",
@@ -1200,7 +1200,7 @@ def submit_assignment(
 
 def grade_assignment_submission(
     *,
-    submission: "AssignmentSubmission",
+    submission: AssignmentSubmission,
     marks_obtained: Decimal,
     feedback: str,
     graded_by: Staff,
@@ -1236,9 +1236,9 @@ def grade_assignment_submission(
 
 def submit_quiz_attempt(
     *,
-    attempt: "QuizAttempt",
+    attempt: QuizAttempt,
     answers: dict[int, dict],
-) -> "QuizAttempt":
+) -> QuizAttempt:
     """Spec §10 'Implement automatic marking where appropriate'.
 
     `answers` maps question_id -> {"option_ids": [...]} for
@@ -1292,8 +1292,8 @@ def submit_quiz_attempt(
 
 
 def grade_quiz_short_answer(
-    *, answer: "QuizAnswer", marks_awarded: Decimal
-) -> "QuizAnswer":
+    *, answer: QuizAnswer, marks_awarded: Decimal
+) -> QuizAnswer:
     """Manual grading step for SHORT_ANSWER questions within an attempt.
     Once every short-answer question in the attempt has been graded,
     the attempt is marked fully graded and its manual_score is totaled."""
