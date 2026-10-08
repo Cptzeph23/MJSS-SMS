@@ -16,7 +16,27 @@ from typing import Any
 from django.db import transaction
 from django.http import HttpRequest
 
-from .models import Assessment, AuditLog, ClassSubject, LoginHistory, Staff, Student, Term, User
+from .models import (
+    Assessment,
+    AssessmentMark,
+    Assignment,
+    AssignmentSubmission,
+    AttendanceRecord,
+    AuditLog,
+    ClassSubject,
+    GradeBand,
+    LoginHistory,
+    QuizAnswer,
+    QuizAttempt,
+    ReportCard,
+    ReportTemplate,
+    ResultAmendmentRequest,
+    Staff,
+    Student,
+    Term,
+    Transcript,
+    User,
+)
 
 
 def _client_ip(request: HttpRequest | None) -> str | None:
